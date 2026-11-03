@@ -5,6 +5,7 @@
 - Customer site (approved design): home, menu+search+categories, product (meat/extras/qty), cart (meat switch, promo preview, note), checkout (delivery/pickup, address details, branch, ASAP/scheduled, payment, contact), Leaflet/OSM address picker with geolocation + search + reverse geocoding, branches map, realtime tracking with courier GPS, profile (bonus balance, name, addresses, history+reorder, favorites synced, notifications toggle, support), WhatsApp OTP login with fixed +7 prefix.
 - Kitchen/operator dashboard (realtime, sound + mute, columns, actions, stop-list), courier app (offers, atomic accept, active delivery, navigation, GPS, history), admin (dashboard stats, orders with filters/pagination/actions, products/prices/photos/availability, branches/zones/hours, staff invites, couriers, promotions, customers, support, audit log).
 - TypeScript strict 0 errors, ESLint 0 problems, production build OK.
+- Verified on the Cloudflare Workers runtime locally (OpenNext build + wrangler dev): E2E 43/43. Note: `cacheComponents` must stay OFF — it hangs on Workers.
 
 ## Requires the owner
 - **Branch coordinates**: taken from the approved design, stored as *unverified*. Delivery auto-assignment is disabled until an admin ticks «Координаты проверены» for each branch (Admin → Филиалы). Pickup works now.

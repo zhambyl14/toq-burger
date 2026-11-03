@@ -1,5 +1,4 @@
 import 'server-only';
-import { cacheLife } from 'next/cache';
 import { supabasePublic } from '@/lib/supabase/admin';
 import type { Catalog, Meat } from '@/types/catalog';
 
@@ -10,10 +9,18 @@ interface ProductRow {
   product_variants: { id: string; meat: Meat; label: string; price_kzt: number | null; nutrition: string | null; image_path: string | null; is_active: boolean }[];
 }
 
-/** Cached public catalog: admin edits appear within ~1 minute. */
+// Per-isolate memory cache: keeps Supabase load low; admin edits appear within ~30 s.
+const TTL_MS = 30_000;
+let memo: { at: number; data: Catalog } | null = null;
+
 export async function loadCatalog(): Promise<Catalog> {
-  'use cache';
-  cacheLife({ stale: 30, revalidate: 60, expire: 3600 });
+  if (memo && Date.now() - memo.at < TTL_MS) return memo.data;
+  const data = await fetchCatalog();
+  if (data.configured) memo = { at: Date.now(), data };
+  return data;
+}
+
+async function fetchCatalog(): Promise<Catalog> {
   const db = supabasePublic();
   if (!db) return { configured: false, products: [], extras: [], branches: [], hours: [] };
 

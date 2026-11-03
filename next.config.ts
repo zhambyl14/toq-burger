@@ -2,9 +2,7 @@ import type { NextConfig } from "next";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // cacheComponents is intentionally OFF: it hangs on the Cloudflare Workers runtime (OpenNext).
   turbopack: {
     rules: {
       "*.css": {
