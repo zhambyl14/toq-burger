@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMounted } from '@/features/catalog/hooks';
 import { useApp } from '@/stores/app';
+import { FloatingCart } from '@/components/customer/FloatingCart';
 
 const ICONS: Record<string, React.ReactNode> = {
   home: <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
@@ -19,6 +20,7 @@ const ITEMS = [
 ];
 
 const HIDDEN = ['/product', '/checkout', '/auth', '/map'];
+const WITH_CART = ['/', '/menu', '/branches'];
 
 export function BottomNav() {
   const path = usePathname();
@@ -29,6 +31,8 @@ export function BottomNav() {
   const count = mounted ? cart.reduce((a, c) => a + c.qty, 0) : 0;
 
   return (
+    <>
+      {WITH_CART.includes(path) && <FloatingCart />}
     <nav className="bottom-nav" aria-label="Навигация">
       {ITEMS.map((n) => {
         const active = n.href === '/' ? path === '/' : path.startsWith(n.href);
@@ -44,5 +48,6 @@ export function BottomNav() {
         );
       })}
     </nav>
+    </>
   );
 }

@@ -6,6 +6,7 @@ import { Logo, Spinner, Toast } from '@/components/ui';
 import { signOut, useSession } from '@/hooks/useSession';
 import { supabaseConfigured } from '@/lib/supabase/client';
 
+const MOD_NAV = ['/admin/orders', '/admin/support'];
 const NAV: [string, string][] = [
   ['/admin', 'Обзор и аналитика'],
   ['/admin/orders', 'Заказы'],
@@ -42,14 +43,27 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     if (session.ready && !session.user && supabaseConfigured()) router.replace('/auth?next=/admin');
   }, [session.ready, session.user, router]);
 
+  const isAdmin = session.roles.includes('ADMIN');
+  const isMod = !isAdmin && session.roles.includes('MODERATOR');
+  const nav = isMod ? NAV.filter(([h]) => MOD_NAV.includes(h)) : NAV;
+  const modAllowed = MOD_NAV.some((h) => path === h || path.startsWith(h + '/'));
+
   let body: React.ReactNode = children;
   if (!supabaseConfigured()) body = <Center>База данных не подключена.</Center>;
   else if (!session.ready || !session.user) body = <Center><Spinner dark /></Center>;
-  else if (!session.roles.includes('ADMIN')) {
+  else if (isMod && !modAllowed) {
     body = (
       <Center>
         <div className="disp" style={{ fontSize: 22, fontWeight: 800 }}>Нет доступа</div>
-        <div style={{ fontSize: 14, color: '#6B6258', fontWeight: 600, marginTop: 8 }}>Админ-панель доступна только администраторам.</div>
+        <div style={{ fontSize: 14, color: '#6B6258', fontWeight: 600, marginTop: 8 }}>Модератору доступны только заказы и поддержка.</div>
+        <Link href="/admin/orders" className="btn primary" style={{ display: 'inline-flex', alignItems: 'center', marginTop: 16, height: 48, padding: '0 24px', borderRadius: 24, textDecoration: 'none' }}>К заказам</Link>
+      </Center>
+    );
+  } else if (!isAdmin && !isMod) {
+    body = (
+      <Center>
+        <div className="disp" style={{ fontSize: 22, fontWeight: 800 }}>Нет доступа</div>
+        <div style={{ fontSize: 14, color: '#6B6258', fontWeight: 600, marginTop: 8 }}>Админ-панель доступна только администраторам и модераторам.</div>
         <Link href="/" className="btn primary" style={{ display: 'inline-flex', alignItems: 'center', marginTop: 16, height: 48, padding: '0 24px', borderRadius: 24, textDecoration: 'none' }}>На главную</Link>
       </Center>
     );
@@ -64,7 +78,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <Logo />
           <div className="admin-brand-text"><div className="disp" style={{ fontSize: 16, fontWeight: 800 }}>TOK BURGER</div><div style={{ fontSize: 11, color: '#B9AFA3', fontWeight: 700 }}>Админ-панель</div></div>
         </div>
-        {NAV.map(([href, label]) => {
+        {(isAdmin || isMod) && (
+          <div className="admin-foot" style={{ padding: '0 14px 10px' }}>
+            <span style={{ padding: '4px 10px', borderRadius: 10, background: isAdmin ? '#FF6A0A' : '#0B6EE5', color: '#fff', fontSize: 12, fontWeight: 800 }}>{isAdmin ? 'Админ' : 'Модератор'}</span>
+          </div>
+        )}
+        {nav.map(([href, label]) => {
           const active = href === '/admin' ? path === '/admin' : path.startsWith(href);
           return (
             <Link key={href} href={href} className="btn" aria-current={active ? 'page' : undefined}

@@ -126,5 +126,37 @@ await expect('admin invites existing customer as courier', async () => { await a
 await expect('admin stats', () => as(tAdmin, 'authenticated', `select sum(orders_total)::int n from admin_stats(now() - interval '1 day', now() + interval '1 minute')`), (r) => r.rows[0].n >= 3);
 await expect('audit log written', () => db.query(`select count(*)::int n from audit_logs where entity='staff_invites'`), (r) => r.rows[0].n >= 1);
 
+// moderation, support threads, named history, phone change
+await db.query(`insert into staff_invites(phone, role, display_name) values ('+77000000040','MODERATOR','Модератор Айгерім')`);
+const moder = await mk('+77000000040');
+await expect('moderator role applied from invite', () => db.query(`select count(*)::int n from user_roles where user_id=$1 and role='MODERATOR'`, [moder]), (r) => r.rows[0].n === 1);
+await expect('moderator sees all orders', () => as(moder, 'authenticated', `select count(*)::int n from orders`), (r) => r.rows[0].n >= 3);
+let mOrder;
+await expect('moderator can change order status', async () => { const r = await place(cust, 'key-mod-0001', [{ product_id: classic, meat: 'beef', quantity: 1 }]); mOrder = r.rows[0].id; return as(moder, 'authenticated', `select transition_order('${mOrder}','ACCEPTED') s`); }, (r) => r.rows[0].s === 'ACCEPTED');
+await expect('history has actor name + role', () => db.query(`select actor_name, actor_role from order_status_history where order_id=$1 and to_status='ACCEPTED'`, [mOrder]), (r) => r.rows[0]?.actor_name === 'Модератор Айгерім' && r.rows[0]?.actor_role === 'MODERATOR');
+await expect('moderator cannot edit catalog', () => as(moder, 'authenticated', `update products set name='X' where slug='classic'`), (r, e) => !!e || r.affectedRows === 0);
+let sreq;
+await expect('customer opens support thread on own order', async () => { const r = await as(cust, 'authenticated', `insert into support_requests(user_id, order_id, message, kind) values ('${cust}','${mOrder}','Где заказ?','COURIER') returning id, kind, status`); sreq = r.rows[0].id; return r; }, (r) => r.rows[0].kind === 'CUSTOMER' && r.rows[0].status === 'OPEN');
+await expect('customer2 cannot read that thread', () => as(cust2, 'authenticated', `select count(*)::int n from support_requests where id='${sreq}'`), (r) => r.rows[0].n === 0);
+await expect('moderator replies; thread IN_PROGRESS + order event', async () => { await as(moder, 'authenticated', `insert into support_messages(request_id, author_id, body) values ('${sreq}','${moder}','Уже едет')`); return db.query(`select (select status from support_requests where id=$1) st, (select count(*)::int from order_status_history where order_id=$2 and event='SUPPORT_REPLY') ev, (select author_role from support_messages where request_id=$1 limit 1) ar`, [sreq, mOrder]); }, (r) => r.rows[0].st === 'IN_PROGRESS' && r.rows[0].ev === 1 && r.rows[0].ar === 'MODERATOR');
+await expect('customer sees reply', () => as(cust, 'authenticated', `select count(*)::int n from support_messages where request_id='${sreq}'`), (r) => r.rows[0].n === 1);
+await expect('other customer cannot post into the thread', () => as(cust2, 'authenticated', `insert into support_messages(request_id, author_id, body) values ('${sreq}','${cust2}','hack')`), (r, e) => !!e);
+await expect('courier support thread kind COURIER', () => as(courier, 'authenticated', `insert into support_requests(user_id, message, kind) values ('${courier}','Клиент не отвечает','COURIER') returning kind`), (r) => r.rows[0].kind === 'COURIER');
+await expect('courier reject recorded with role', async () => { await as(courier2, 'authenticated', `select courier_reject_order('${mOrder}')`); return db.query(`select actor_role from order_status_history where order_id=$1 and event='COURIER_REJECTED'`, [mOrder]); }, (r) => r.rows[0]?.actor_role === 'COURIER');
+await expect('moderator cannot change staff phone', () => as(moder, 'authenticated', `select admin_change_staff_phone('+77000000040','+77000000041')`), err('FORBIDDEN'));
+await expect('admin changes staff phone (invite + profile)', async () => { await as(tAdmin, 'authenticated', `select admin_change_staff_phone('+77000000040','+77000000041')`); return db.query(`select (select phone from profiles where id=$1) p, (select count(*)::int from staff_invites where phone='+77000000041') i`, [moder]); }, (r) => r.rows[0].p === '+77000000041' && r.rows[0].i === 1);
+await expect('phone change to taken number refused', () => as(tAdmin, 'authenticated', `select admin_change_staff_phone('+77000000041','+77000000002')`), err('PHONE_TAKEN'));
+
+await expect('halal: no bacon in menu', () => db.query(`select count(*)::int n from products where description ~* 'бекон' or 'Бекон' = any(ingredients)`), (r) => r.rows[0].n === 0);
+await expect('customer shares own order into general thread', async () => {
+  const t = await as(cust, 'authenticated', `insert into support_requests(user_id, message) values ('${cust}','Вопрос') returning id`);
+  await as(cust, 'authenticated', `insert into support_messages(request_id, author_id, body, order_id) values ('${t.rows[0].id}','${cust}','Вот заказ','${mOrder}')`);
+  return db.query(`select order_id from support_requests where id=$1`, [t.rows[0].id]);
+}, (r) => r.rows[0].order_id === mOrder);
+await expect('customer cannot share someone else order', async () => {
+  const t = await as(cust2, 'authenticated', `insert into support_requests(user_id, message) values ('${cust2}','Вопрос') returning id`);
+  return as(cust2, 'authenticated', `insert into support_messages(request_id, author_id, body, order_id) values ('${t.rows[0].id}','${cust2}','чужой','${mOrder}')`);
+}, err('ORDER_NOT_YOURS'));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

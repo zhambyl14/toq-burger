@@ -13,7 +13,12 @@ import type { OrderRow, OrderStatus } from '@/types/catalog';
 
 const PAGE = 25;
 
-interface HistoryRow { id: number; from_status: OrderStatus | null; to_status: OrderStatus; note: string | null; created_at: string }
+interface HistoryRow {
+  id: number; from_status: OrderStatus | null; to_status: OrderStatus | null; note: string | null; created_at: string;
+  actor_name: string | null; actor_role: string | null; event: 'STATUS' | 'COURIER_REJECTED' | 'COURIER_RELEASED' | 'SUPPORT_REPLY' | 'NOTE';
+}
+const ACTOR_ROLE: Record<string, string> = { ADMIN: 'Админ', MODERATOR: 'Модератор', KITCHEN: 'Кухня', OPERATOR: 'Оператор', COURIER: 'Курьер', CUSTOMER: 'Клиент', SYSTEM: 'Система' };
+const EVENT_LABEL: Record<string, string> = { COURIER_REJECTED: 'Курьер отказался', COURIER_RELEASED: 'Курьер снят', SUPPORT_REPLY: 'Ответ поддержки', NOTE: 'Заметка' };
 interface PaymentRow { id: string; method: string; status: string; amount_kzt: number; provider: string; paid_at: string | null }
 
 function Orders() {
@@ -122,9 +127,12 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
   const load = useCallback(async () => {
     const [a, h, p] = await Promise.all([
       sb().from('orders').select('*, order_items(*)').eq('id', id).maybeSingle(),
-      sb().from('order_status_history').select('id,from_status,to_status,note,created_at').eq('order_id', id).order('created_at'),
+      sb().from('order_status_history').select('id,from_status,to_status,note,created_at,actor_name,actor_role,event').eq('order_id', id).order('created_at').order('id'),
       sb().from('payments').select('id,method,status,amount_kzt,provider,paid_at').eq('order_id', id),
     ]);
+    if (a.error) toast(errText(a.error.message));
+    if (h.error) toast(errText(h.error.message));
+    if (p.error) toast(errText(p.error.message));
     const order = a.data as OrderRow | null;
     setO(order);
     setHist((h.data as HistoryRow[]) ?? []);
@@ -135,6 +143,12 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
     } else setCourier(null);
   }, [id]);
   useEffect(() => { (async () => { await load(); })(); }, [load]);
+
+  // realtime: new history rows for the open order
+  useEffect(() => {
+    const ch = sb().channel(`order-history-${id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_status_history', filter: `order_id=eq.${id}` }, () => { load(); }).subscribe();
+    return () => { sb().removeChannel(ch); };
+  }, [id, load]);
 
   const move = async (to: OrderStatus) => {
     if (!o) return;
@@ -221,11 +235,19 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
           </Panel>
 
           <Panel style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>История статусов</div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>История</div>
+            {hist.length === 0 && <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 600, marginTop: 8 }}>Записей пока нет.</div>}
             {hist.map((h) => (
-              <div key={h.id} style={{ display: 'flex', gap: 10, fontSize: 13, fontWeight: 700, marginTop: 8 }}>
+              <div key={h.id} style={{ display: 'flex', gap: 10, fontSize: 13, fontWeight: 700, marginTop: 10 }}>
                 <span style={{ color: '#6B6258', whiteSpace: 'nowrap' }}>{dateShort(h.created_at)} {timeHM(h.created_at)}</span>
-                <span>{h.from_status ? `${STATUS_LABEL[h.from_status]} → ` : ''}<b>{STATUS_LABEL[h.to_status]}</b>{h.note ? ` · ${h.note}` : ''}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: '#C24D00' }}>{h.actor_name ?? 'Система'} · {ACTOR_ROLE[h.actor_role ?? 'SYSTEM'] ?? h.actor_role}</div>
+                  {h.event === 'STATUS' ? (
+                    <div>{h.from_status ? STATUS_LABEL[h.from_status] : 'создан'} → <b>{h.to_status ? STATUS_LABEL[h.to_status] : '—'}</b>{h.note ? ` · ${h.note}` : ''}</div>
+                  ) : (
+                    <div><b>{EVENT_LABEL[h.event] ?? h.event}</b>{h.note ? ` · ${h.note}` : ''}</div>
+                  )}
+                </div>
               </div>
             ))}
           </Panel>

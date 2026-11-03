@@ -6,8 +6,8 @@ import { useCatalog } from '@/components/CatalogProvider';
 import { BackBtn, PinIcon, Spinner, toast } from '@/components/ui';
 import { almatyClock } from '@/features/branches/assign';
 import { useQuote } from '@/features/branches/useQuote';
-import { useBreak, useMounted } from '@/features/catalog/hooks';
-import { cartTotals } from '@/features/cart/pricing';
+import { meatName, useBreak, useMounted } from '@/features/catalog/hooks';
+import { cartTotals, unitPrice } from '@/features/cart/pricing';
 import { useSession } from '@/hooks/useSession';
 import { useApp } from '@/stores/app';
 import { fmt } from '@/lib/money';
@@ -77,7 +77,14 @@ export default function CheckoutPage() {
     return () => { alive = false; };
   }, [promoCode, subtotal, setApp]);
 
-  if (!mounted) return <div style={{ padding: 40, textAlign: 'center' }}><Spinner dark /></div>;
+  if (!mounted) {
+    return (
+      <div style={{ padding: 16 }} aria-busy="true" aria-label="Загрузка">
+        <div style={{ width: 180, height: 30, borderRadius: 10, background: '#F3EADF', animation: 'fade .9s ease-in-out infinite alternate' }} />
+        {[70, 150, 90, 120].map((h, i) => <div key={i} style={{ height: h, borderRadius: 22, background: '#fff', marginTop: 14, animation: 'fade .9s ease-in-out infinite alternate' }} />)}
+      </div>
+    );
+  }
 
   const disc = s.promo && discount && discount.code === s.promo ? Math.min(discount.amount, tot.subtotal) : 0;
   const payable = tot.total - disc;
@@ -91,6 +98,14 @@ export default function CheckoutPage() {
     ? (quote.branch ? quote.branch.address : 'Выберите филиал для самовывоза.')
     : quote.branch ? 'Ваш заказ будет приготовлен в ближайшем TOK BURGER.'
       : s.address ? (quote.pick?.reason === 'CLOSED' ? 'Филиал на перерыве — выберите время после 08:00.' : (quote.pick?.reason === 'OUTSIDE_CITY' ? 'Доставляем только по Алматы.' : 'Сейчас ни один филиал не принимает заказы.')) : 'Укажите адрес на карте.';
+
+  const phoneHint = contact.length === 0 ? 'Нужен номер для связи с курьером' : contact.length < 10 ? `Введите ещё ${10 - contact.length} цифр` : '';
+  const stepDone = [addrOk && pickupOk, true, true];
+  const stepSub = [
+    addrOk && pickupOk ? (isDelivery ? (quote.branch?.short_name ?? 'Готово') : 'Самовывоз') : 'Выберите',
+    scheduled ? (slotList[slotIdx]?.label ?? 'Ко времени') : 'Скорее',
+    PAYMENT_METHODS.find((m) => m.id === pay)?.label ?? 'Выберите',
+  ];
 
   const placeText = !s.cart.length ? 'Корзина пуста'
     : !session.user ? `Войти и оформить · ${fmt(payable)}`
@@ -141,7 +156,21 @@ export default function CheckoutPage() {
         <h1 className="disp" style={{ fontSize: 22, fontWeight: 800 }}>Оформление</h1>
       </div>
 
-      <div role="tablist" style={{ display: 'flex', gap: 6, marginTop: 16, background: '#fff', borderRadius: 22, padding: 5 }}>
+      <ol aria-label="Шаги оформления" style={{ listStyle: 'none', margin: '16px 0 0', padding: 0, display: 'flex', gap: 8 }}>
+        {(['Адрес', 'Время', 'Оплата'] as const).map((t, i) => (
+          <li key={t} style={{ flex: 1, minWidth: 0 }}>
+            <a href={`#co-${i}`} className="btn" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '8px 4px', minHeight: 56, borderRadius: 18, background: stepDone[i] ? '#FFF1E0' : '#fff', border: `2px solid ${stepDone[i] ? '#FF6A0A' : '#F3EADF'}`, textDecoration: 'none', color: '#141210', boxSizing: 'border-box' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 800, fontSize: 13 }}>
+                <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: '50%', background: stepDone[i] ? '#2E8B3F' : '#E5DACB', color: '#fff', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stepDone[i] ? '✓' : i + 1}</span>
+                {t}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#6B6258', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stepSub[i]}</span>
+            </a>
+          </li>
+        ))}
+      </ol>
+
+      <div role="tablist" style={{ display: 'flex', gap: 6, marginTop: 14, background: '#fff', borderRadius: 22, padding: 5 }}>
         {([['DELIVERY', 'Доставка'], ['PICKUP', 'Самовывоз']] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={s.mode === k} className="btn" onClick={() => s.set({ mode: k, pickupBranchId: s.pickupBranchId ?? branches[0]?.id ?? null })}
             style={{ flex: 1, height: 44, borderRadius: 18, fontWeight: 800, fontSize: 14, background: s.mode === k ? '#FF6A0A' : '#fff', color: s.mode === k ? '#fff' : '#141210' }}>{label}</button>
@@ -149,8 +178,8 @@ export default function CheckoutPage() {
       </div>
 
       {isDelivery ? (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>Адрес доставки</div>
+        <div id="co-0" className="card" style={{ marginTop: 14, scrollMarginTop: 12 }}>
+          <div className="disp" style={{ fontWeight: 800, fontSize: 15 }}>Адрес доставки</div>
           <Link href="/map" className="btn" style={{ marginTop: 10, width: '100%', minHeight: 56, borderRadius: 16, background: '#FFF1E0', display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', textAlign: 'left', textDecoration: 'none', boxSizing: 'border-box' }}>
             <PinIcon /><span style={{ flex: 1, fontWeight: 800, fontSize: 14 }}>{s.address?.label ?? 'Выберите адрес на карте'}</span><span style={{ color: '#C24D00', fontWeight: 800, fontSize: 13 }}>Карта</span>
           </Link>
@@ -163,8 +192,8 @@ export default function CheckoutPage() {
           <input className="field" value={s.details.instr} onChange={set('instr')} placeholder="Комментарий курьеру" aria-label="Комментарий курьеру" style={{ marginTop: 8 }} />
         </div>
       ) : (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>Филиал для самовывоза</div>
+        <div id="co-0" className="card" style={{ marginTop: 14, scrollMarginTop: 12 }}>
+          <div className="disp" style={{ fontWeight: 800, fontSize: 15 }}>Филиал для самовывоза</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
             {branches.map((b) => (
               <button key={b.id} className="btn" onClick={() => s.set({ pickupBranchId: b.id })}
@@ -188,8 +217,8 @@ export default function CheckoutPage() {
         <Link href="/branches" className="btn" style={{ flex: 'none', minHeight: 44, padding: '0 14px', borderRadius: 14, background: 'rgba(255,255,255,.22)', color: 'inherit', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', textDecoration: 'none' }}>Смотреть</Link>
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>Время</div>
+      <div id="co-1" className="card" style={{ marginTop: 14, scrollMarginTop: 12 }}>
+        <div className="disp" style={{ fontWeight: 800, fontSize: 15 }}>Время</div>
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           {([['asap', 'Как можно скорее', brk], ['later', 'Ко времени', false]] as const).map(([k, label, dis]) => {
             const act = (brk ? 'later' : timeMode) === k;
@@ -208,16 +237,17 @@ export default function CheckoutPage() {
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>Контактный телефон</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, height: 48, borderRadius: 14, border: '2px solid #F3EADF', padding: '0 12px' }}>
+        <div className="disp" style={{ fontWeight: 800, fontSize: 15 }}>Контактный телефон</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, height: 48, borderRadius: 14, border: `2px solid ${contact.length === 10 ? '#2E8B3F' : '#F3EADF'}`, padding: '0 12px' }}>
           <span style={{ fontWeight: 800 }}>+7</span>
           <input value={contact.replace(/(\d{3})(\d{0,3})(\d{0,2})(\d{0,2})/, (_, a, b, c, d) => [a, b, c, d].filter(Boolean).join(' '))} inputMode="numeric" aria-label="Контактный телефон"
-            onChange={(e) => setContact(e.target.value.replace(/\D/g, '').slice(0, 10))} style={{ flex: 1, border: 0, outline: 'none', fontWeight: 800, fontSize: 15, minWidth: 0 }} placeholder={session.phone ? formatPhone(session.phone).slice(3) : '747 400 53 47'} />
+            onChange={(e) => setContact(e.target.value.replace(/\D/g, '').slice(0, 10))} style={{ flex: 1, border: 0, outline: 'none', fontWeight: 800, fontSize: 15, minWidth: 0 }} placeholder={session.phone ? formatPhone(session.phone).slice(3) : '747 400 53 47'} aria-invalid={contact.length !== 10} />
         </div>
+        {phoneHint && <div role="status" style={{ fontSize: 12, fontWeight: 700, color: '#C24D00', marginTop: 6 }}>{phoneHint}</div>}
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>Оплата</div>
+      <div id="co-2" className="card" style={{ marginTop: 14, scrollMarginTop: 12 }}>
+        <div className="disp" style={{ fontWeight: 800, fontSize: 15 }}>Оплата</div>
         <div role="radiogroup" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
           {PAYMENT_METHODS.map((p) => (
             <button key={p.id} role="radio" aria-checked={pay === p.id} disabled={!p.enabled} className="btn" onClick={() => setPay(p.id)}
@@ -233,16 +263,30 @@ export default function CheckoutPage() {
       </div>
 
       <div className="card" style={{ marginTop: 14, fontSize: 14, fontWeight: 700, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#6B6258' }}>Позиций</span><span>{tot.count}</span></div>
+        <div className="disp" style={{ fontWeight: 800, fontSize: 15 }}>Ваш заказ · {tot.count} шт.</div>
+        {s.cart.map((l) => {
+          const p = products.find((x) => x.id === l.productId);
+          const u = unitPrice(p, l.meat, l.extraIds, extras);
+          return (
+            <div key={l.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+              <span style={{ minWidth: 0 }}>{l.qty} × {p?.name ?? 'Позиция недоступна'}{p?.category === 'burgers' ? ' · ' + meatName(l.meat) : ''}</span>
+              <span style={{ whiteSpace: 'nowrap' }}>{u != null ? fmt(u * l.qty) : '—'}</span>
+            </div>
+          );
+        })}
+        <div style={{ borderTop: '2px dashed #F3EADF' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#6B6258' }}>Сумма</span><span>{fmt(tot.subtotal)}</span></div>
         {disc > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2E8B3F' }}><span>Скидка ({s.promo})</span><span>−{fmt(disc)}</span></div>}
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#6B6258' }}>Доставка</span><span>{isDelivery ? fmt(quote.fee) : '—'}</span></div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 800 }}><span>К оплате</span><span>{fmt(payable)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 800 }}><span className="disp">К оплате</span><span className="disp" style={{ color: '#C24D00' }}>{fmt(payable)}</span></div>
         <div style={{ fontSize: 11, color: '#6B6258', fontWeight: 600 }}>Итоговая сумма подтверждается сервером по актуальным ценам.</div>
       </div>
-      <button className="btn primary" onClick={place} disabled={busy} style={{ marginTop: 14, width: '100%', height: 56, borderRadius: 28, fontSize: 16, opacity: canPlace || !session.user ? 1 : 0.45, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {busy ? <Spinner /> : placeText}
-      </button>
+      {!canPlace && session.user && s.cart.length > 0 && <div role="status" style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: '#C24D00' }}>{!addrOk || !pickupOk ? placeText : phoneHint || 'Проверьте корзину'}</div>}
+      <div style={{ position: 'sticky', bottom: 0, zIndex: 30, marginTop: 14, padding: '10px 0 calc(10px + env(safe-area-inset-bottom))', background: 'linear-gradient(to top, #FFF6EC 70%, rgba(255,246,236,0))' }}>
+        <button className="btn primary" onClick={place} disabled={busy} style={{ width: '100%', height: 56, borderRadius: 28, fontSize: 16, opacity: canPlace || !session.user ? 1 : 0.55, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 12px 28px rgba(255,106,10,.4)' }}>
+          {busy ? <Spinner /> : placeText}
+        </button>
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map from '@/components/maps/Map';
 import { useCatalog } from '@/components/CatalogProvider';
-import { BackBtn, Spinner, toast } from '@/components/ui';
+import { BackBtn, PinIcon, Spinner, toast } from '@/components/ui';
 import { pickDeliveryBranch } from '@/features/branches/assign';
 import { useMounted } from '@/features/catalog/hooks';
 import { useApp } from '@/stores/app';
@@ -91,6 +91,7 @@ export default function MapPage() {
     } else if (pick.reason === 'OUTSIDE_CITY') {
       title = 'АДРЕС ВНЕ АЛМАТЫ';
       big = 'Мы доставляем только по Алматы. Поставьте метку в пределах города или выберите самовывоз.';
+      small = pick.nearest ? `Ближайший филиал: ${pick.nearest.branch.short_name}, ${pick.nearest.distanceKm.toFixed(1)} км по прямой` : '';
     } else {
       title = 'ФИЛИАЛЫ НЕДОСТУПНЫ';
       big = 'Сейчас ни один филиал не принимает заказы. Попробуйте позже или выберите самовывоз.';
@@ -114,7 +115,8 @@ export default function MapPage() {
       </div>
 
       <div style={{ position: 'relative', marginTop: 14 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Улица и дом, например «Абая 10»" aria-label="Поиск адреса" className="field" style={{ height: 52, borderRadius: 16, border: 0 }} />
+        <span aria-hidden="true" style={{ position: 'absolute', left: 13, top: 15, pointerEvents: 'none' }}><PinIcon size={22} /></span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Улица и дом, например «Абая 10»" aria-label="Поиск адреса" className="field" style={{ height: 52, borderRadius: 18, border: 0, paddingLeft: 44, boxShadow: '0 6px 18px rgba(120,60,0,.08)' }} />
         {results.length > 0 && (
           <div style={{ position: 'absolute', left: 0, right: 0, top: 56, zIndex: 20, background: '#fff', borderRadius: 16, boxShadow: '0 10px 28px rgba(120,60,0,.18)', overflow: 'hidden' }}>
             {results.map((r, i) => (
@@ -126,7 +128,7 @@ export default function MapPage() {
       </div>
 
       <div style={{ marginTop: 12, height: 'min(56vh, 420px)', borderRadius: 26, overflow: 'hidden', boxShadow: '0 10px 28px rgba(120,60,0,.12)' }}>
-        <Map branches={markers} pin={pin} onPick={onPick} height="100%" />
+        {mounted ? <Map branches={markers} pin={pin} onPick={onPick} height="100%" /> : <div style={{ height: '100%', background: '#F3EADF', animation: 'fade .9s ease-in-out infinite alternate' }} aria-label="Загрузка карты" />}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -134,22 +136,30 @@ export default function MapPage() {
           {locating ? <Spinner dark /> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.5" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>}
           Моё местоположение
         </button>
-        <button className="btn" onClick={() => { setApp({ mode: 'PICKUP' }); router.push('/branches'); }} style={{ flex: 1, minHeight: 48, borderRadius: 16, background: '#fff', fontWeight: 800, fontSize: 13 }}>Самовывоз</button>
+        <button className="btn" onClick={() => { setApp({ mode: 'PICKUP' }); router.push('/branches'); }} style={{ flex: 1, minHeight: 48, borderRadius: 16, background: '#fff', fontWeight: 800, fontSize: 13 }}>Самовывоз из филиала</button>
       </div>
 
-      {pin && (
-        <div style={{ marginTop: 12, background: '#fff', borderRadius: 16, padding: '12px 14px', fontWeight: 800, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-          {resolving ? <><Spinner dark /> Определяем адрес…</> : label}
+      {pin ? (
+        <div style={{ marginTop: 12, background: '#fff', borderRadius: 22, padding: 14, display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 8px 22px rgba(120,60,0,.07)' }}>
+          <span style={{ flex: 'none', width: 44, height: 44, borderRadius: 14, background: '#FFF1E0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PinIcon /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#6B6258' }}>АДРЕС ДОСТАВКИ</div>
+            <div aria-live="polite" style={{ fontWeight: 800, fontSize: 14, marginTop: 2 }}>{resolving ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Spinner dark /> Определяем адрес…</span> : label}</div>
+            {pick?.branch && pick.distanceKm != null && <div style={{ fontSize: 12, fontWeight: 700, color: '#2E8B3F', marginTop: 3 }}>{pick.branch.short_name} · {pick.distanceKm.toFixed(1)} км от вас</div>}
+          </div>
         </div>
+      ) : (
+        <div style={{ marginTop: 12, background: '#FFF1E0', borderRadius: 22, padding: 14, fontSize: 13, fontWeight: 700, color: '#C24D00' }}>Найдите адрес в поиске, нажмите на карту или используйте «Моё местоположение».</div>
       )}
 
-      <div style={{ marginTop: 12, background: bg, color: '#fff', borderRadius: 20, padding: 16 }}>
+      <div style={{ marginTop: 12, background: bg, color: '#fff', borderRadius: 22, padding: 16 }} role="status">
         <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.8 }}>{title}</div>
         <div style={{ fontWeight: 800, fontSize: 15, marginTop: 4 }}>{big}</div>
         {small && <div style={{ fontSize: 12, marginTop: 4, fontWeight: 600, opacity: 0.9 }}>{small}</div>}
       </div>
-      <button className="btn dark" onClick={confirm} disabled={!canConfirm} style={{ marginTop: 12, width: '100%', height: 56, borderRadius: 28, fontSize: 16, opacity: canConfirm ? 1 : 0.4 }}>Подтвердить адрес</button>
-      <div style={{ height: 8 }} />
+      <div style={{ position: 'sticky', bottom: 0, zIndex: 30, marginTop: 12, padding: '10px 0 calc(10px + env(safe-area-inset-bottom))', background: 'linear-gradient(to top, #FFF6EC 70%, rgba(255,246,236,0))' }}>
+      <button className="btn dark" onClick={confirm} disabled={!canConfirm} style={{ width: '100%', height: 56, borderRadius: 28, fontSize: 16, opacity: canConfirm ? 1 : 0.4 }}>Подтвердить адрес</button>
+      </div>
     </div>
   );
 }

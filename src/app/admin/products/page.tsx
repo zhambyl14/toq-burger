@@ -1,8 +1,9 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { ImageEditor } from '@/components/admin/ImageEditor';
 import { Drawer, Label, PageHead, Panel, TableWrap, Toggle, useAdminBranches } from '@/components/admin/kit';
 import { ProductImg, Spinner, toast } from '@/components/ui';
-import { priceSchema, productSchema, slugify, uploadProductImage, type AdminCategory, type AdminExtra, type AdminProduct, type AdminVariant } from '@/features/admin/catalog';
+import { PHOTO_UPDATED_TOAST, priceSchema, productSchema, removeProductImage, slugify, uploadProductImage, validateImageFile, type AdminCategory, type AdminExtra, type AdminProduct, type AdminVariant } from '@/features/admin/catalog';
 import { errText } from '@/features/admin/transitions';
 import { meatName } from '@/features/catalog/hooks';
 import { sb } from '@/lib/supabase/client';
@@ -39,6 +40,13 @@ export default function AdminProducts() {
   const [newPrice, setNewPrice] = useState('');
   const [newCat, setNewCat] = useState('');
   const [adding, setAdding] = useState(false);
+  const [newTagline, setNewTagline] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [newPhoto, setNewPhoto] = useState<{ blob: Blob; url: string } | null>(null);
+  const [newFile, setNewFile] = useState<File | null>(null);
+  const photoUrl = newPhoto?.url;
+  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
+  const cancelNewFile = useCallback(() => setNewFile(null), []);
 
   const load = useCallback(async () => {
     const [p, c, e] = await Promise.all([
@@ -46,6 +54,7 @@ export default function AdminProducts() {
       sb().from('product_categories').select('id,slug,name,sort_order').order('sort_order'),
       sb().from('product_extras').select('id,group_id,slug,name,price_kzt,is_active,sort_order').order('sort_order'),
     ]);
+    if (p.error || c.error || e.error) toast(errText((p.error ?? c.error ?? e.error)?.message));
     setProducts((p.data as AdminProduct[]) ?? []);
     const cl = (c.data as AdminCategory[]) ?? [];
     setCats(cl);
@@ -76,13 +85,24 @@ export default function AdminProducts() {
     if (!pr.success) return toast(pr.error.issues[0].message);
     if (!newCat) return toast('Выберите категорию');
     setAdding(true);
-    const { data, error } = await sb().from('products').insert({ slug: slugify(name), name, category_id: newCat, sort_order: 100 }).select('id').single();
+    const { data, error } = await sb().from('products').insert({ slug: slugify(name), name, category_id: newCat, sort_order: 100, tagline: newTagline.trim() || null, description: newDesc.trim() || null }).select('id').single();
     if (error || !data) { setAdding(false); return toast(errText(error?.message)); }
     const v = await sb().from('product_variants').insert({ product_id: data.id, meat: 'one', label: 'порция', price_kzt: newPrice === '' ? null : Number(newPrice) });
+    if (v.error) { setAdding(false); load(); return toast(errText(v.error.message)); }
+    let photoOk = true;
+    if (newPhoto) {
+      try {
+        const path = await uploadProductImage(newPhoto.blob, data.id as string);
+        const u = await sb().from('products').update({ image_path: path }).eq('id', data.id);
+        if (u.error) { await removeProductImage(path); throw new Error(errText(u.error.message)); }
+      } catch (e) {
+        photoOk = false;
+        toast((e as Error).message + '. Продукт создан — загрузите фото в карточке');
+      }
+    }
     setAdding(false);
-    if (v.error) return toast(errText(v.error.message));
-    setNewName(''); setNewPrice('');
-    toast('Продукт добавлен');
+    setNewName(''); setNewPrice(''); setNewTagline(''); setNewDesc(''); setNewPhoto(null);
+    if (photoOk) toast(newPhoto ? 'Продукт добавлен с фото. На сайте появится в течение минуты' : 'Продукт добавлен');
     load();
     setEdit(data.id as string);
   };
@@ -135,16 +155,34 @@ export default function AdminProducts() {
         </tbody>
       </TableWrap>
 
-      <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Название нового продукта" aria-label="Новый продукт" className="field" style={{ flex: 1, minWidth: 200, border: 0, height: 48, borderRadius: 16 }} />
-        <select className="field" value={newCat} onChange={(e) => setNewCat(e.target.value)} aria-label="Категория" style={{ width: 200, border: 0, height: 48, borderRadius: 16 }}>
-          {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <input value={newPrice} onChange={(e) => setNewPrice(e.target.value.replace(/\D/g, '').slice(0, 7))} placeholder="Цена ₸" aria-label="Цена" inputMode="numeric" className="field" style={{ width: 120, border: 0, height: 48, borderRadius: 16 }} />
-        <button className="btn primary" disabled={adding} onClick={addProduct} style={{ height: 48, padding: '0 24px', borderRadius: 24 }}>{adding ? <Spinner /> : '+ Добавить'}</button>
-      </div>
+      <Panel style={{ marginTop: 20 }}>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>Добавить товар</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Название нового продукта" aria-label="Новый продукт" className="field" style={{ flex: 1, minWidth: 200, height: 48, borderRadius: 16 }} />
+          <select className="field" value={newCat} onChange={(e) => setNewCat(e.target.value)} aria-label="Категория" style={{ width: 200, height: 48, borderRadius: 16 }}>
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input value={newPrice} onChange={(e) => setNewPrice(e.target.value.replace(/\D/g, '').slice(0, 7))} placeholder="Цена ₸" aria-label="Цена" inputMode="numeric" className="field" style={{ width: 120, height: 48, borderRadius: 16 }} />
+        </div>
+        <input value={newTagline} onChange={(e) => setNewTagline(e.target.value.slice(0, 120))} placeholder="Подзаголовок" aria-label="Подзаголовок" className="field" style={{ marginTop: 10, height: 48, borderRadius: 16 }} />
+        <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value.slice(0, 1000))} placeholder="Описание" aria-label="Описание" rows={2} className="field" style={{ marginTop: 10, height: 'auto', padding: 12, borderRadius: 16 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+          <div style={{ width: 64, height: 64, borderRadius: 14, background: '#FFF1E0', overflow: 'hidden', flex: 'none' }}>
+            {newPhoto ? <span aria-label="Выбранное фото" role="img" style={{ display: 'block', width: '100%', height: '100%', backgroundImage: `url(${newPhoto.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }} /> : <ProductImg path={null} />}
+          </div>
+          <label className="btn" style={{ minHeight: 40, padding: '0 14px', borderRadius: 12, background: '#141210', color: '#fff', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            {newPhoto ? 'Другое фото' : 'Выбрать фото'}
+            <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Выбрать фото нового товара" disabled={adding} style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; const m = validateImageFile(f); if (m) return toast(m); setNewFile(f); }} />
+          </label>
+          {newPhoto && <button type="button" className="btn" onClick={() => setNewPhoto(null)} style={{ minHeight: 40, padding: '0 14px', borderRadius: 12, background: '#F3EADF', color: '#B3261E', fontWeight: 800, fontSize: 13 }}>Убрать фото</button>}
+          <div style={{ flex: 1 }} />
+          <button className="btn primary" disabled={adding} onClick={addProduct} style={{ height: 48, padding: '0 24px', borderRadius: 24 }}>{adding ? <Spinner /> : '+ Добавить'}</button>
+        </div>
+      </Panel>
       <div style={{ fontSize: 12, color: '#6B6258', marginTop: 10, fontWeight: 600 }}>Пустая цена = «Цена уточняется»: позиция видна в меню, но заказать её нельзя. Цены напитков не заданы владельцем — заполните при готовности.</div>
 
+      {newFile && <ImageEditor file={newFile} onCancel={cancelNewFile} onDone={(blob) => { setNewPhoto({ blob, url: URL.createObjectURL(blob) }); setNewFile(null); }} />}
       {edit && <ProductEditor key={edit} id={edit} products={products} cats={cats} onClose={() => setEdit(null)} onSaved={load} />}
     </>
   );
@@ -178,6 +216,7 @@ function ProductEditor({ id, products, cats, onClose, onSaved }: { id: string; p
   const [avail, setAvail] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [pending, setPending] = useState<{ file: File; target: { variant?: AdminVariant } } | null>(null);
 
   useEffect(() => {
     sb().from('product_availability').select('branch_id,is_available').eq('product_id', id).then(({ data }) => {
@@ -186,6 +225,8 @@ function ProductEditor({ id, products, cats, onClose, onSaved }: { id: string; p
       setAvail(m);
     });
   }, [id]);
+
+  const cancelPending = useCallback(() => setPending(null), []);
 
   if (!p) return null;
 
@@ -212,22 +253,50 @@ function ProductEditor({ id, products, cats, onClose, onSaved }: { id: string; p
     toast(v ? 'Доступен в филиале' : 'Стоп-лист: недоступен в филиале');
   };
 
-  const upload = async (file: File | undefined, target: { variant?: AdminVariant }) => {
-    if (!file) return;
+  const upload = async (blob: Blob, target: { variant?: AdminVariant }) => {
     setBusy(true);
+    let newPath: string | null = null;
     try {
-      const path = await uploadProductImage(file, target.variant ? `${p.slug}-${target.variant.meat}` : p.slug);
+      newPath = await uploadProductImage(blob, p.id);
       const { error } = target.variant
-        ? await sb().from('product_variants').update({ image_path: path }).eq('id', target.variant.id)
-        : await sb().from('products').update({ image_path: path }).eq('id', p.id);
+        ? await sb().from('product_variants').update({ image_path: newPath }).eq('id', target.variant.id)
+        : await sb().from('products').update({ image_path: newPath }).eq('id', p.id);
       if (error) throw new Error(errText(error.message));
-      toast('Фото обновлено');
+      const old = target.variant ? target.variant.image_path : p.image_path;
+      if (old && old !== newPath) {
+        const rm = await removeProductImage(old);
+        if (rm) toast('Старый файл не удалён из хранилища: ' + rm);
+      }
+      toast(PHOTO_UPDATED_TOAST);
       onSaved();
     } catch (e) {
+      if (newPath) await removeProductImage(newPath);
       toast((e as Error).message);
     } finally {
       setBusy(false);
     }
+  };
+
+  const deletePhoto = async (target: { variant?: AdminVariant }) => {
+    const old = target.variant ? target.variant.image_path : p.image_path;
+    if (!old || !confirm('Удалить фото?')) return;
+    setBusy(true);
+    const { error } = target.variant
+      ? await sb().from('product_variants').update({ image_path: null }).eq('id', target.variant.id)
+      : await sb().from('products').update({ image_path: null }).eq('id', p.id);
+    if (error) { setBusy(false); return toast(errText(error.message)); }
+    const rm = await removeProductImage(old);
+    setBusy(false);
+    if (rm) toast('Фото снято, но файл не удалён из хранилища: ' + rm);
+    else toast('Фото удалено. На сайте обновится в течение минуты');
+    onSaved();
+  };
+
+  const pick = (file: File | undefined, target: { variant?: AdminVariant }) => {
+    if (!file) return;
+    const m = validateImageFile(file);
+    if (m) return toast(m);
+    setPending({ file, target });
   };
 
   const addVariant = async (meat: Meat) => {
@@ -266,10 +335,10 @@ function ProductEditor({ id, products, cats, onClose, onSaved }: { id: string; p
 
       <Panel style={{ marginTop: 12 }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>Фото</div>
-        <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 4 }}>PNG/JPEG/WEBP до 3 МБ. Хранится в Supabase Storage.</div>
-        <PhotoRow label="Основное фото" path={p.image_path} disabled={busy} onFile={(file) => upload(file, {})} />
+        <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 4 }}>PNG/JPEG/WEBP до 8 МБ. Перед загрузкой фото можно обрезать и поправить. Хранится в Supabase Storage.</div>
+        <PhotoRow label="Основное фото" path={p.image_path} disabled={busy} onFile={(file) => pick(file, {})} onDelete={() => deletePhoto({})} />
         {p.product_variants.filter((v) => v.meat !== 'one').map((v) => (
-          <PhotoRow key={v.id} label={`Фото: ${meatName(v.meat)}`} path={v.image_path} disabled={busy} onFile={(file) => upload(file, { variant: v })} />
+          <PhotoRow key={v.id} label={`Фото: ${meatName(v.meat)}`} path={v.image_path} disabled={busy} onFile={(file) => pick(file, { variant: v })} onDelete={() => deletePhoto({ variant: v })} />
         ))}
       </Panel>
 
@@ -300,11 +369,12 @@ function ProductEditor({ id, products, cats, onClose, onSaved }: { id: string; p
           </div>
         ))}
       </Panel>
+      {pending && <ImageEditor file={pending.file} onCancel={cancelPending} onDone={(blob) => { const t = pending.target; setPending(null); upload(blob, t); }} />}
     </Drawer>
   );
 }
 
-function PhotoRow({ label, path, disabled, onFile }: { label: string; path: string | null; disabled: boolean; onFile: (f: File | undefined) => void }) {
+function PhotoRow({ label, path, disabled, onFile, onDelete }: { label: string; path: string | null; disabled: boolean; onFile: (f: File | undefined) => void; onDelete: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
       <div style={{ width: 64, height: 64, borderRadius: 14, background: '#FFF1E0', overflow: 'hidden', flex: 'none' }}><ProductImg path={path} /></div>
@@ -313,6 +383,7 @@ function PhotoRow({ label, path, disabled, onFile }: { label: string; path: stri
         Загрузить
         <input type="file" accept="image/png,image/jpeg,image/webp" disabled={disabled} onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} style={{ display: 'none' }} />
       </label>
+      {path && <button type="button" className="btn" disabled={disabled} onClick={onDelete} aria-label={`Удалить фото: ${label}`} style={{ minHeight: 40, padding: '0 12px', borderRadius: 12, background: '#F3EADF', color: '#B3261E', fontWeight: 800, fontSize: 13 }}>Удалить фото</button>}
     </div>
   );
 }

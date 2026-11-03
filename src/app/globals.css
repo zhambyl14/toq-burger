@@ -59,3 +59,28 @@ a { color: inherit; }
 
 /* Staff dashboards are wide */
 .staff-frame { min-height: 100dvh; background: var(--sand); }
+
+/* ---- Customer storefront additions ---- */
+@keyframes fcpop { 0% { transform: scale(.94) } 45% { transform: scale(1.04) translateY(-3px) } 100% { transform: none } }
+@keyframes snack-in { from { transform: translateY(14px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes ring-pop { 0% { transform: scale(.3); opacity: 0 } 60% { transform: scale(1.15); opacity: 1 } 100% { transform: scale(1) } }
+@keyframes check-draw { from { stroke-dashoffset: 30 } to { stroke-dashoffset: 0 } }
+@keyframes live-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+.fcart-wrap { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; box-sizing: border-box; padding: 0 14px; z-index: 39; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.fcart-wrap > * { pointer-events: auto; }
+.fcart-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 0 22px; border-radius: 28px; background: var(--ink); color: #fff; text-decoration: none; box-shadow: 0 14px 30px rgba(20,18,16,.35); animation: fcpop .45s ease; }
+.fcart-snack { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 10px 0 16px; border-radius: 18px; background: var(--ink); color: #fff; box-shadow: 0 10px 26px rgba(0,0,0,.28); animation: snack-in .25s ease both; }
+
+.hscroll { display: flex; gap: 14px; overflow-x: auto; padding: 0 16px 10px; scroll-snap-type: x proximity; }
+.hscroll > * { scroll-snap-align: start; }
+.mgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 359px) { .mgrid { grid-template-columns: minmax(0, 1fr); } }
+.lift { transition: transform .2s, box-shadow .2s; }
+.lift:hover { transform: translateY(-2px); }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; animation: live-dot 1.6s ease-in-out infinite; }
+.check-path { stroke-dasharray: 30; animation: check-draw .5s .15s ease both; }
+.ring-pop { animation: ring-pop .5s ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .fcart-bar, .fcart-snack, .ring-pop, .live-dot, .check-path { animation: none; }
+}

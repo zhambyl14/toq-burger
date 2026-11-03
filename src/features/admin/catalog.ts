@@ -30,15 +30,30 @@ export function slugify(s: string): string {
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
-export const MAX_IMAGE = 3 * 1024 * 1024;
+export const MAX_INPUT_IMAGE = 8 * 1024 * 1024;
+export const PHOTO_UPDATED_TOAST = 'Фото обновлено. На сайте появится в течение минуты';
 
-/** Uploads to Storage bucket product-images, returns the object path. */
-export async function uploadProductImage(file: File, prefix: string): Promise<string> {
-  if (!IMAGE_TYPES.includes(file.type)) throw new Error('Только PNG, JPEG или WEBP');
-  if (file.size > MAX_IMAGE) throw new Error('Файл больше 3 МБ');
-  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-  const path = `${prefix}-${Date.now()}.${ext}`;
-  const { error } = await sb().storage.from('product-images').upload(path, file, { upsert: true, contentType: file.type, cacheControl: '31536000' });
+/** Returns an error message, or null when the file can be opened in the editor. */
+export function validateImageFile(file: File): string | null {
+  const heic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+  if (heic) return 'Формат HEIC не поддерживается. Сохраните фото как JPEG или PNG';
+  if (!IMAGE_TYPES.includes(file.type)) return 'Только PNG, JPEG или WEBP';
+  if (file.size > MAX_INPUT_IMAGE) return 'Файл больше 8 МБ';
+  return null;
+}
+
+/** Uploads a processed image to Storage bucket product-images as products/<id>/<ts>.webp, returns the object path. */
+export async function uploadProductImage(blob: Blob, productId: string): Promise<string> {
+  const ext = blob.type === 'image/jpeg' ? 'jpg' : 'webp';
+  const path = `products/${productId}/${Date.now()}.${ext}`;
+  const { error } = await sb().storage.from('product-images').upload(path, blob, { contentType: blob.type || 'image/webp', cacheControl: '31536000' });
   if (error) throw new Error('Не удалось загрузить: ' + error.message);
   return path;
+}
+
+/** Best-effort removal of an old object; failure is reported but never blocks the caller. */
+export async function removeProductImage(path: string | null | undefined): Promise<string | null> {
+  if (!path) return null;
+  const { error } = await sb().storage.from('product-images').remove([path]);
+  return error ? error.message : null;
 }

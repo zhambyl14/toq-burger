@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { sb, supabaseConfigured } from '@/lib/supabase/client';
 
-export type Role = 'CUSTOMER' | 'KITCHEN' | 'OPERATOR' | 'COURIER' | 'ADMIN';
+export type Role = 'CUSTOMER' | 'KITCHEN' | 'OPERATOR' | 'COURIER' | 'ADMIN' | 'MODERATOR';
 
 interface SessionState {
   ready: boolean;
@@ -60,6 +60,7 @@ export function useSession(): SessionState {
 
 export function homeForRoles(roles: Role[]): string {
   if (roles.includes('ADMIN')) return '/admin';
+  if (roles.includes('MODERATOR')) return '/admin/orders';
   if (roles.includes('KITCHEN') || roles.includes('OPERATOR')) return '/kitchen';
   if (roles.includes('COURIER')) return '/courier';
   return '/';

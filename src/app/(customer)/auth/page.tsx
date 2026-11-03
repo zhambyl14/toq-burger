@@ -119,7 +119,12 @@ function Auth() {
           <div style={{ marginTop: 32 }}><Logo size={56} radius={18} /></div>
           <h1 className="disp" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.05, marginTop: 20 }}>Добро пожаловать в<br />TOK BURGER</h1>
           <div style={{ fontSize: 14, marginTop: 10, fontWeight: 600, opacity: 0.95 }}>Введите номер телефона, чтобы продолжить. Қош келдіңіз!</div>
-          <form onSubmit={(e) => { e.preventDefault(); sendCode(); }} style={{ marginTop: 28, background: '#fff', borderRadius: 24, padding: 20, color: '#141210' }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+            {['100% халал', 'Заказ без пароля', 'Отслеживание онлайн'].map((t) => (
+              <span key={t} style={{ background: 'rgba(255,255,255,.22)', borderRadius: 14, padding: '7px 12px', fontSize: 12, fontWeight: 800 }}>{t}</span>
+            ))}
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); sendCode(); }} style={{ marginTop: 20, background: '#fff', borderRadius: 30, padding: 22, color: '#141210', boxShadow: '0 18px 40px rgba(120,40,0,.28)' }}>
             <label htmlFor="ph" style={{ fontSize: 12, fontWeight: 800, color: '#6B6258' }}>НОМЕР ТЕЛЕФОНА</label>
             <div key={shake} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, height: 56, borderRadius: 16, background: '#F3EADF', padding: '0 14px', animation: shake ? 'shake .4s' : undefined, border: `2px solid ${err ? '#B3261E' : 'transparent'}` }}>
               <span aria-hidden="true" style={{ fontWeight: 800, fontSize: 18, userSelect: 'none' }}>+7</span>
@@ -144,7 +149,7 @@ function Auth() {
           <div style={{ fontSize: 14, marginTop: 10, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
             <WhatsAppIcon /> Мы отправили код подтверждения в WhatsApp: {maskPhone(phone)}
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); verify(); }} style={{ marginTop: 28, background: '#fff', borderRadius: 24, padding: 20, color: '#141210' }}>
+          <form onSubmit={(e) => { e.preventDefault(); verify(); }} style={{ marginTop: 28, background: '#fff', borderRadius: 30, padding: 22, color: '#141210', boxShadow: '0 18px 40px rgba(120,40,0,.28)' }}>
             <label htmlFor="otp" style={{ fontSize: 12, fontWeight: 800, color: '#6B6258' }}>6-ЗНАЧНЫЙ КОД</label>
             <div key={shake} onClick={() => otpRef.current?.focus()} style={{ position: 'relative', display: 'flex', gap: 8, marginTop: 10, animation: shake ? 'shake .4s' : undefined }}>
               {[0, 1, 2, 3, 4, 5].map((i) => (

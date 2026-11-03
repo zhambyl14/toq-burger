@@ -7,6 +7,7 @@ import { StaffGuard } from '@/components/staff/StaffGuard';
 import { meatName, useNowMinute } from '@/features/catalog/hooks';
 import { useCourierData, useCourierGps, type CBranch } from '@/features/courier/useCourier';
 import { startOfAlmatyDay } from '@/features/kitchen/useKitchen';
+import { SupportCenter } from '@/features/support/SupportCenter';
 import { dateShort, orderErr, timeHM } from '@/features/orders/status';
 import { signOut, useSession } from '@/hooks/useSession';
 import { fmt } from '@/lib/money';
@@ -14,7 +15,7 @@ import { formatPhone } from '@/lib/phone';
 import { sb } from '@/lib/supabase/client';
 import type { OrderRow, OrderStatus } from '@/types/catalog';
 
-type Tab = 'offers' | 'active' | 'earn' | 'profile';
+type Tab = 'offers' | 'active' | 'earn' | 'support' | 'profile';
 
 const PAY: Record<OrderRow['payment_method'], string> = { CASH: 'Оплата при получении', KASPI_QR: 'Kaspi QR', ONLINE: 'Онлайн' };
 const STEP: Partial<Record<OrderStatus, { label: string; btn: string; to: OrderStatus }>> = {
@@ -30,6 +31,7 @@ const ICONS: Record<Tab, React.ReactNode> = {
   offers: <><circle cx="6" cy="17" r="3.2" /><circle cx="18" cy="17" r="3.2" /><path d="M6 17l4-8h5l3 8M9 9H7M13 9l-2 8" /></>,
   active: <><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /></>,
   earn: <><circle cx="12" cy="12" r="9" /><path d="M9 8h6M12 8v8M9 12h6" /></>,
+  support: <><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9.5h8M8 12.5h5" /></>,
   profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
 };
 
@@ -222,6 +224,15 @@ function Courier() {
           </section>
         )}
 
+        {tab === 'support' && (
+          <section style={{ animation: 'up .3s ease both' }}>
+            <h1 className="disp" style={{ fontSize: 22, fontWeight: 800, margin: '4px 0 12px' }}>Поддержка</h1>
+            <div style={{ background: '#241F1B', borderRadius: 22, padding: 16 }}>
+              <SupportCenter kind="COURIER" dark />
+            </div>
+          </section>
+        )}
+
         {tab === 'profile' && (
           <section style={{ animation: 'up .3s ease both' }}>
             <h1 className="disp" style={{ fontSize: 22, fontWeight: 800, margin: '4px 0 12px' }}>Профиль</h1>
@@ -237,7 +248,7 @@ function Courier() {
       </main>
 
       <nav aria-label="Разделы курьера" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: '#241F1B', borderRadius: '26px 26px 0 0', display: 'flex', padding: '8px 8px calc(14px + env(safe-area-inset-bottom))', zIndex: 40 }}>
-        {([['offers', 'Заказы'], ['active', 'Активный'], ['earn', 'Заработок'], ['profile', 'Профиль']] as [Tab, string][]).map(([k, label]) => (
+        {([['offers', 'Заказы'], ['active', 'Активный'], ['earn', 'Заработок'], ['support', 'Поддержка'], ['profile', 'Профиль']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} className="btn" onClick={() => setTab(k)} aria-current={tab === k ? 'page' : undefined}
             style={{ flex: 1, minHeight: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: tab === k ? '#FF6A0A' : '#B9AFA3', position: 'relative' }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[k]}</svg>

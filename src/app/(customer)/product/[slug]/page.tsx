@@ -2,6 +2,8 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useCatalog } from '@/components/CatalogProvider';
+import { HalalBadge } from '@/components/customer/HalalBadge';
+import { cleanList, cleanText } from '@/components/customer/halal';
 import { Heart, ProductImg, toast } from '@/components/ui';
 import { defaultMeat, meatName, useMounted, variantImage } from '@/features/catalog/hooks';
 import { unitPrice } from '@/features/cart/pricing';
@@ -21,6 +23,8 @@ export default function ProductPage() {
   const [meat, setMeat] = useState<Meat | null>(null);
   const [ex, setEx] = useState<string[]>([]);
   const [qty, setQty] = useState(1);
+  const [added, setAdded] = useState<{ n: number; name: string } | null>(null);
+  const cart = useApp((s) => s.cart);
 
   const back = () => (window.history.length > 1 ? router.back() : router.push('/menu'));
 
@@ -43,8 +47,7 @@ export default function ProductPage() {
   const addToCart = () => {
     if (unit == null) return;
     add({ productId: p.id, meat: m, qty, extraIds: ex });
-    toast(`${p.name} × ${qty} добавлен в корзину`);
-    back();
+    setAdded({ n: qty, name: p.name });
   };
 
   return (
@@ -61,10 +64,11 @@ export default function ProductPage() {
       <div style={{ padding: '22px 20px 0' }}>
         <h1 className="disp" style={{ fontSize: 26, fontWeight: 800 }}>{p.name}</h1>
         {p.tagline && <div style={{ fontSize: 13, fontWeight: 700, color: '#C24D00', marginTop: 4 }}>{p.tagline}</div>}
-        {p.description && <div style={{ fontSize: 14, lineHeight: 1.5, color: '#4A423A', marginTop: 10, fontWeight: 600 }}>{p.description}</div>}
-        {p.ingredients.length > 0 && (
+        <div style={{ marginTop: 10 }}><HalalBadge dark /></div>
+        {cleanText(p.description) && <div style={{ fontSize: 14, lineHeight: 1.5, color: '#4A423A', marginTop: 10, fontWeight: 600 }}>{cleanText(p.description)}</div>}
+        {cleanList(p.ingredients).length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-            {p.ingredients.map((i) => <span key={i} style={{ padding: '6px 10px', borderRadius: 12, background: '#fff', fontSize: 12, fontWeight: 700 }}>{i}</span>)}
+            {cleanList(p.ingredients).map((i) => <span key={i} style={{ padding: '6px 10px', borderRadius: 12, background: '#fff', fontSize: 12, fontWeight: 700 }}>{i}</span>)}
           </div>
         )}
         {variant?.nutrition && <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: '#6B6258' }}>{variant.nutrition}</div>}

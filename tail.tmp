@@ -1,0 +1,100 @@
+        {p.category === 'burgers' && (
+          <>
+            <div style={{ fontWeight: 800, fontSize: 15, marginTop: 22 }}>Мясо</div>
+            <div role="radiogroup" aria-label="Мясо" style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+              {(['chicken', 'beef'] as Meat[]).map((mm) => {
+                const v = p.variants.find((x) => x.meat === mm);
+                const has = v?.price != null;
+                const act = m === mm && has;
+                const cur = variant?.price ?? null;
+                const delta = has && cur != null && mm !== m ? v!.price! - cur : null;
+                return (
+                  <button key={mm} role="radio" aria-checked={act} disabled={!has} className="btn" onClick={() => has && setMeat(mm)}
+                    style={{ flex: 1, minHeight: 68, borderRadius: 20, padding: '8px 6px', fontWeight: 800, fontSize: 15, background: act ? '#FF6A0A' : '#fff', color: act ? '#fff' : '#141210', opacity: has ? 1 : 0.4, boxShadow: act ? '0 10px 22px rgba(255,106,10,.35)' : '0 4px 14px rgba(120,60,0,.08)', border: `2px solid ${act ? '#FF6A0A' : '#fff'}` }}>
+                    {meatName(mm)}
+                    <span style={{ display: 'block', fontSize: 13, opacity: 0.9, marginTop: 2 }}>{has ? fmt(v!.price!) : 'нет в меню'}</span>
+                    {delta != null && delta !== 0 && <span style={{ display: 'block', fontSize: 11, color: delta > 0 ? '#C24D00' : '#2E8B3F', marginTop: 1 }}>{delta > 0 ? '+' : '−'}{fmt(Math.abs(delta))} к текущему</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {groupExtras.length > 0 && (
+          <>
+            <div style={{ fontWeight: 800, fontSize: 15, marginTop: 22 }}>Дополнительно</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+              {groupExtras.map((e) => {
+                const on = ex.includes(e.id);
+                return (
+                  <button key={e.id} role="checkbox" aria-checked={on} className="btn" onClick={() => setEx(on ? ex.filter((x) => x !== e.id) : [...ex, e.id])}
+                    style={{ minHeight: 56, display: 'flex', alignItems: 'center', gap: 12, background: on ? '#FFF1E0' : '#fff', borderRadius: 18, padding: '0 14px', textAlign: 'left', border: `2px solid ${on ? '#FF6A0A' : '#fff'}` }}>
+                    <span style={{ flex: 'none', width: 26, height: 26, borderRadius: 9, background: on ? '#FF6A0A' : '#E5DACB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {on && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>}
+                    </span>
+                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{e.name}</span>
+                    <span style={{ fontWeight: 800, fontSize: 14, color: '#C24D00' }}>+{fmt(e.price)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {p.category === 'burgers' && recs.length > 0 && (
+          <>
+            <div style={{ fontWeight: 800, fontSize: 15, marginTop: 22 }}>С этим берут</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+              {recs.map((r) => {
+                const v = r.variants[0];
+                if (v?.price == null) return null;
+                const inCart = mounted ? cart.filter((c) => c.productId === r.id).reduce((a, c) => a + c.qty, 0) : 0;
+                return (
+                  <button key={r.id} className="btn" aria-label={`Добавить ${r.name} в корзину`} onClick={() => { add({ productId: r.id, meat: v.meat, qty: 1, extraIds: [] }); toast(`${r.name} в корзине`); }}
+                    style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: 20, padding: 10, textAlign: 'left', minHeight: 64, display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 14px rgba(120,60,0,.08)' }}>
+                    <span style={{ flex: 'none', width: 48, height: 48, borderRadius: 14, background: '#FFF1E0', padding: 3, boxSizing: 'border-box', overflow: 'hidden' }}><ProductImg path={r.image} /></span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontWeight: 800, fontSize: 13 }}>{r.name}</span>
+                      <span style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#C24D00', marginTop: 2 }}>{inCart > 0 ? `в корзине · ${inCart}` : `+ ${fmt(v.price)}`}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+        <div style={{ height: 24 }} />
+      </div>
+
+      <div className="sticky-bar" style={{ background: '#fff', borderRadius: '28px 28px 0 0', padding: '14px 16px calc(18px + env(safe-area-inset-bottom))', boxShadow: '0 -10px 30px rgba(120,60,0,.12)' }}>
+        {added ? (
+          <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span className="ring-pop" style={{ flex: 'none', width: 40, height: 40, borderRadius: '50%', background: '#2E8B3F', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path className="check-path" d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+              </span>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>Добавлено: {added.name} × {added.n}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn dark" onClick={back} style={{ flex: 1, height: 52, borderRadius: 26, fontSize: 15 }}>Продолжить</button>
+              <button className="btn primary" onClick={() => router.push('/cart')} style={{ flex: 1, height: 52, borderRadius: 26, fontSize: 15 }}>В корзину</button>
+            </div>
+            <button className="btn" onClick={() => setAdded(null)} style={{ minHeight: 44, fontSize: 13, fontWeight: 800, color: '#6B6258' }}>Изменить и добавить ещё</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', background: '#F3EADF', borderRadius: 26, height: 52 }}>
+              <button className="btn" onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Меньше" style={{ width: 44, height: 52, fontSize: 22, fontWeight: 800 }}>−</button>
+              <div aria-live="polite" style={{ minWidth: 20, textAlign: 'center', fontWeight: 800, fontSize: 16 }}>{qty}</div>
+              <button className="btn" onClick={() => setQty(Math.min(50, qty + 1))} aria-label="Больше" style={{ width: 44, height: 52, fontSize: 22, fontWeight: 800 }}>+</button>
+            </div>
+            <button className="btn primary" disabled={unit == null} onClick={addToCart} style={{ flex: 1, height: 52, borderRadius: 26, fontSize: 16, opacity: unit == null ? 0.45 : 1 }}>
+              {unit == null ? 'Нет в наличии' : `В корзину · ${fmt(unit * qty)}`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
