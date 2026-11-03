@@ -13,7 +13,7 @@ export interface Quote {
 }
 
 export function useQuote(at?: Date): Quote {
-  const { branches, hours } = useCatalog();
+  const { branches, hours, area } = useCatalog();
   const address = useApp((s) => s.address);
   const mode = useApp((s) => s.mode);
   const pickupId = useApp((s) => s.pickupBranchId);
@@ -24,7 +24,7 @@ export function useQuote(at?: Date): Quote {
       return { mode, branch: b, fee: 0, pick: null };
     }
     if (!address) return { mode, branch: null, fee: 0, pick: null };
-    const pick = pickDeliveryBranch(address, branches, hours, t ? new Date(t) : new Date());
+    const pick = pickDeliveryBranch(address, branches, hours, area, t ? new Date(t) : new Date());
     return { mode, branch: pick.branch, fee: pick.branch?.delivery_fee_kzt ?? 0, pick };
-  }, [mode, pickupId, address, branches, hours, t]);
+  }, [mode, pickupId, address, branches, hours, area, t]);
 }

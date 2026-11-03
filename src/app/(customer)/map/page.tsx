@@ -13,7 +13,7 @@ type P = { lat: number; lon: number };
 
 export default function MapPage() {
   const router = useRouter();
-  const { branches, hours } = useCatalog();
+  const { branches, hours, area } = useCatalog();
   const mounted = useMounted();
   const saved = useApp((s) => s.address);
   const setApp = useApp((s) => s.set);
@@ -74,7 +74,7 @@ export default function MapPage() {
     );
   };
 
-  const pick = useMemo(() => (pin ? pickDeliveryBranch(pin, branches, hours) : null), [pin, branches, hours]);
+  const pick = useMemo(() => (pin ? pickDeliveryBranch(pin, branches, hours, area) : null), [pin, branches, hours, area]);
   const markers = useMemo(() => branches.filter((b) => b.lat != null && b.lon != null)
     .map((b) => ({ id: b.id, lat: b.lat!, lon: b.lon!, label: b.short_name, active: pick?.branch?.id === b.id })), [branches, pick]);
   const ok = !!pick?.branch;
@@ -88,13 +88,12 @@ export default function MapPage() {
     } else if (pick.reason === 'CLOSED') {
       title = 'ФИЛИАЛ ЗАКРЫТ';
       big = 'Ближайший филиал сейчас не принимает заказы (перерыв 06:00–08:00). Можно оформить заказ ко времени.';
-    } else if (pick.reason === 'NO_VERIFIED_BRANCHES') {
-      title = 'ДОСТАВКА НЕ НАСТРОЕНА';
-      big = 'Координаты филиалов ещё не подтверждены администратором. Доступен самовывоз.';
+    } else if (pick.reason === 'OUTSIDE_CITY') {
+      title = 'АДРЕС ВНЕ АЛМАТЫ';
+      big = 'Мы доставляем только по Алматы. Поставьте метку в пределах города или выберите самовывоз.';
     } else {
-      title = 'АДРЕС ВНЕ ЗОНЫ';
-      big = 'Ни один филиал не доставляет по этому адресу. Выберите точку ближе или самовывоз.';
-      small = pick.nearest ? `Ближайший филиал: ${pick.nearest.branch.short_name} (${pick.nearest.distanceKm.toFixed(1)} км), зона доставки ${pick.nearest.branch.delivery_radius_km} км.` : '';
+      title = 'ФИЛИАЛЫ НЕДОСТУПНЫ';
+      big = 'Сейчас ни один филиал не принимает заказы. Попробуйте позже или выберите самовывоз.';
     }
   }
   const bg = !pick ? '#141210' : ok ? '#2E8B3F' : pick.reason === 'CLOSED' ? '#C24D00' : '#B3261E';

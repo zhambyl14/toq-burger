@@ -67,7 +67,7 @@ export default function AdminBranches() {
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 10 }}>{summary(b.id)}</div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#6B6258', marginTop: 4 }}>Радиус {b.delivery_radius_km} км · доставка {fmt(b.delivery_fee_kzt)} · мин. заказ {fmt(b.min_order_kzt)}</div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, color: b.coords_verified ? '#2E8B3F' : '#B3261E' }}>
-              Координаты: {b.lat != null ? `${b.lat.toFixed(5)}, ${b.lon!.toFixed(5)}` : 'не заданы'} · {b.coords_verified ? 'проверены' : 'НЕ проверены — авто-доставка отключена'}
+              Координаты: {b.lat != null ? `${b.lat.toFixed(5)}, ${b.lon!.toFixed(5)}` : 'не заданы'} · {b.coords_verified ? 'проверены' : 'не отмечены как проверенные'}
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <button className="btn" onClick={() => flip(b, 'accepts_orders', !b.accepts_orders)} style={{ minHeight: 44, padding: '0 18px', borderRadius: 22, background: b.accepts_orders ? '#2E8B3F' : '#B3261E', color: '#fff', fontWeight: 800, fontSize: 13 }}>
@@ -131,7 +131,7 @@ function BranchEditor({ b, hours, onClose, onSaved, onFlip }: { b: Branch; hours
         </div>
         <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 12, fontSize: 13, fontWeight: 700, lineHeight: 1.4, cursor: 'pointer' }}>
           <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1, accentColor: '#FF6A0A' }} />
-          <span>Координаты проверены по 2GIS. <span style={{ color: '#6B6258', fontWeight: 600 }}>Автоматическое назначение филиала для доставки использует только проверенные координаты. {coordsChanged ? 'Координаты изменены — подтвердите заново.' : ''}</span></span>
+          <span>Координаты проверены по 2GIS. <span style={{ color: '#6B6258', fontWeight: 600 }}>Заказ автоматически уходит в ближайший открытый филиал (метка клиента должна быть в пределах Алматы), поэтому координаты должны быть точными. {coordsChanged ? 'Координаты изменены — подтвердите заново.' : ''}</span></span>
         </label>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 120 }}><Label>РАДИУС ДОСТАВКИ, КМ</Label><input className="field" value={f.delivery_radius_km} onChange={fld('delivery_radius_km')} inputMode="decimal" /></div>

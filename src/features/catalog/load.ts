@@ -22,18 +22,19 @@ export async function loadCatalog(): Promise<Catalog> {
 
 async function fetchCatalog(): Promise<Catalog> {
   const db = supabasePublic();
-  if (!db) return { configured: false, products: [], extras: [], branches: [], hours: [] };
+  if (!db) return { configured: false, products: [], extras: [], branches: [], hours: [], area: [] };
 
-  const [p, e, b, h] = await Promise.all([
+  const [p, e, b, h, a] = await Promise.all([
     db.from('products')
       .select('id,slug,name,tagline,description,ingredients,image_path,extra_group_id,sort_order,is_active,product_categories(slug),product_variants(id,meat,label,price_kzt,nutrition,image_path,is_active)')
       .eq('is_active', true).order('sort_order'),
     db.from('product_extras').select('id,slug,name,price_kzt,group_id,sort_order').eq('is_active', true).order('sort_order'),
     db.from('branches').select('id,slug,name,short_name,address,map_url,lat,lon,coords_verified,delivery_radius_km,delivery_fee_kzt,min_order_kzt,is_active,accepts_orders').eq('is_active', true).order('sort_order'),
     db.from('branch_working_hours').select('branch_id,day_of_week,open_time,close_time'),
+    db.from('service_areas').select('rings'),
   ]);
-  if (p.error || e.error || b.error || h.error) {
-    return { configured: false, products: [], extras: [], branches: [], hours: [] };
+  if (p.error || e.error || b.error || h.error || a.error) {
+    return { configured: false, products: [], extras: [], branches: [], hours: [], area: [] };
   }
 
   return {
@@ -47,5 +48,6 @@ async function fetchCatalog(): Promise<Catalog> {
     extras: e.data.map((x) => ({ id: x.id, slug: x.slug, name: x.name, price: x.price_kzt, groupId: x.group_id })),
     branches: b.data.map((x) => ({ ...x, delivery_radius_km: Number(x.delivery_radius_km) })),
     hours: h.data,
+    area: (a.data ?? []).flatMap((r) => r.rings as [number, number][][]),
   };
 }

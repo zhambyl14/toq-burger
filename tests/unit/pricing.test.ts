@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addLine, cartTotals, changeQty, lineKey, switchMeat, unitPrice } from '@/features/cart/pricing';
-import { haversineKm, isBranchOpen, pickDeliveryBranch } from '@/features/branches/assign';
+import { haversineKm, inServiceArea, isBranchOpen, pickDeliveryBranch, type Ring } from '@/features/branches/assign';
+import almatyRings from './almaty-rings.json';
 import { normalizeKzPhone, internalEmailFor, maskPhone } from '@/lib/phone';
 import type { Branch, Extra, Hours, Product } from '@/types/catalog';
 
@@ -63,6 +64,8 @@ const allDay = (ids: string[]): Hours[] => ids.flatMap((id) => [0, 1, 2, 3, 4, 5
   { branch_id: id, day_of_week: d, open_time: '08:00:00', close_time: '00:00:00' },
 ]));
 
+const AREA = almatyRings as Ring[];
+
 describe('branch assignment', () => {
   const zhar = br('zhar', 43.211785, 76.902073), tole = br('tole', 43.250623, 76.879649);
   const hours = allDay(['zhar', 'tole']);
@@ -73,19 +76,21 @@ describe('branch assignment', () => {
     expect(haversineKm({ lat: 43.2118, lon: 76.9021 }, { lat: 43.2506, lon: 76.8796 })).toBeGreaterThan(4);
   });
   it('picks nearest open branch', () => {
-    expect(pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [zhar, tole], hours, noonAlmaty).branch?.id).toBe('tole');
+    expect(pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [zhar, tole], hours, AREA, noonAlmaty).branch?.id).toBe('tole');
   });
-  it('out of zone', () => {
-    expect(pickDeliveryBranch({ lat: 43.6, lon: 77.3 }, [zhar, tole], hours, noonAlmaty).reason).toBe('OUT_OF_ZONE');
+  it('outside Almaty (Kaskelen, Talgar) is rejected; airport is inside', () => {
+    expect(pickDeliveryBranch({ lat: 43.2, lon: 76.62 }, [zhar, tole], hours, AREA, noonAlmaty).reason).toBe('OUTSIDE_CITY');
+    expect(inServiceArea({ lat: 43.30, lon: 77.24 }, AREA)).toBe(false);
+    expect(pickDeliveryBranch({ lat: 43.3521, lon: 77.0405 }, [zhar, tole], hours, AREA, noonAlmaty).reason).toBe('OK');
   });
   it('break 06:00–08:00 closes branches', () => {
     expect(isBranchOpen('zhar', hours, breakAlmaty)).toBe(false);
-    expect(pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [zhar, tole], hours, breakAlmaty).reason).toBe('CLOSED');
+    expect(pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [zhar, tole], hours, AREA, breakAlmaty).reason).toBe('CLOSED');
   });
-  it('skips branch not accepting orders and unverified coords', () => {
-    const p = pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [zhar, { ...tole, accepts_orders: false }], hours, noonAlmaty);
+  it('skips branch not accepting orders; coords verification does not matter', () => {
+    const p = pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [zhar, { ...tole, accepts_orders: false }], hours, AREA, noonAlmaty);
     expect(p.branch?.id).toBe('zhar');
-    expect(pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [{ ...zhar, coords_verified: false }], hours, noonAlmaty).reason).toBe('NO_VERIFIED_BRANCHES');
+    expect(pickDeliveryBranch({ lat: 43.25, lon: 76.88 }, [{ ...zhar, coords_verified: false }], hours, AREA, noonAlmaty).branch?.id).toBe('zhar');
   });
 });
 

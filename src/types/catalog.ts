@@ -60,6 +60,8 @@ export interface Catalog {
   extras: Extra[];
   branches: Branch[];
   hours: Hours[];
+  /** Almaty service area, outer rings of [lon, lat] */
+  area: [number, number][][];
 }
 
 export type OrderStatus =

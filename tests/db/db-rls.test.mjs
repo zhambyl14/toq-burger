@@ -55,8 +55,8 @@ const place = (uid, key, items, lat = 43.2118, lon = 76.9021, extra = {}) => as(
   `select place_order($1,'DELIVERY',$2,'CASH','+77474005347', null, $3, $4, 'Тест адрес', null,null,null,null,null,null,$5,$6) as id`,
   [key, JSON.stringify(items), lat, lon, extra.promo ?? null, extra.sched ?? null]);
 
-await expect('unverified branch coords => OUT_OF_ZONE', () => place(cust, 'key-00000001', [{ product_id: classic, meat: 'beef', quantity: 1 }]), err('OUT_OF_ZONE'));
-await db.query(`update branches set coords_verified = true`);
+await expect('Kaskelen (outside Almaty) => OUT_OF_ZONE', () => place(cust, 'key-00000001', [{ product_id: classic, meat: 'beef', quantity: 1 }], 43.2, 76.62), err('OUT_OF_ZONE'));
+// coordinates verification no longer gates assignment (owner decision)
 // force open regardless of test clock
 await db.exec(`delete from branch_working_hours; insert into branch_working_hours(branch_id, day_of_week, open_time, close_time) select b.id, d, '00:00', '00:00' from branches b, generate_series(0,6) d`);
 
@@ -70,6 +70,10 @@ await expect('drink without price not orderable', () => place(cust, 'key-0000000
 await expect('far address => OUT_OF_ZONE', () => place(cust, 'key-00000006', [{ product_id: classic, meat: 'beef', quantity: 1 }], 43.6, 77.3), err('OUT_OF_ZONE'));
 await expect('nearest branch chosen (Tole bi area)', async () => { const r = await place(cust, 'key-00000007', [{ product_id: classic, meat: 'beef', quantity: 1 }], 43.2505, 76.8797); return db.query(`select branch_id from orders where id=$1`, [r.rows[0].id]); }, (r) => r.rows[0].branch_id === tole);
 await expect('closed branch not used', async () => { await db.query(`update branches set accepts_orders=false where slug='tole'`); const r = await place(cust, 'key-00000008', [{ product_id: classic, meat: 'beef', quantity: 1 }], 43.2505, 76.8797); await db.query(`update branches set accepts_orders=true`); return db.query(`select branch_id from orders where id=$1`, [r.rows[0].id]); }, (r) => r.rows[0].branch_id !== tole);
+await expect('in_service_area: centre in, Talgar out', () => db.query(`select public.in_service_area(43.2389, 76.9455) a, public.in_service_area(43.30, 77.24) b`), (r) => r.rows[0].a === true && r.rows[0].b === false);
+await expect('far but inside Almaty (airport) => nearest branch, no radius limit', async () => { const r = await place(cust, 'key-0000000a', [{ product_id: classic, meat: 'beef', quantity: 1 }], 43.3521, 77.0405); return db.query(`select branch_id from orders where id=$1`, [r.rows[0].id]); }, (r) => !!r.rows[0]?.branch_id);
+await expect('test numbers skip hourly limit', async () => { for (let i = 0; i < 7; i++) { await db.query(`update whatsapp_otp_verifications set consumed_at = now() where phone_number='+77474005349'`); const r = await as(null, 'service_role', `select otp_issue('+77474005349','h'||${i},null,300,true) r`); if (r.rows[0].r !== 'OK') return r; } return { rows: [{ r: 'OK' }] }; }, (r) => r.rows[0].r === 'OK');
+await expect('real numbers still limited', async () => { let last; for (let i = 0; i < 6; i++) { await db.query(`update whatsapp_otp_verifications set consumed_at = now() where phone_number='+77022222222'`); last = await as(null, 'service_role', `select otp_issue('+77022222222','h'||${i},null) r`); } return last; }, (r) => r.rows[0].r === 'RATE_LIMITED');
 await expect('bad quantity rejected', () => place(cust, 'key-00000009', [{ product_id: classic, meat: 'beef', quantity: 0 }]), err('BAD_QUANTITY'));
 await expect('anon cannot place order', () => as(null, 'anon', `select place_order('key-0000000x','PICKUP','[]','CASH','+77000000000')`), err('permission denied'));
 

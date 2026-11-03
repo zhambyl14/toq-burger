@@ -16,7 +16,7 @@ import { sb, supabaseConfigured } from '@/lib/supabase/client';
 import { PAYMENT_METHODS } from '@/config/payments';
 
 const ORDER_ERR: Record<string, string> = {
-  OUT_OF_ZONE: 'Адрес вне зоны доставки или филиал сейчас не принимает заказы',
+  OUT_OF_ZONE: 'Адрес вне Алматы или филиалы сейчас на перерыве',
   BRANCH_UNAVAILABLE: 'Филиал сейчас не принимает заказы. Выберите время после 08:00',
   PRODUCT_UNAVAILABLE: 'Одна из позиций сейчас недоступна. Обновите корзину',
   EXTRA_UNAVAILABLE: 'Добавка недоступна. Обновите корзину',
@@ -90,7 +90,7 @@ export default function CheckoutPage() {
   const branchMsg = !isDelivery
     ? (quote.branch ? quote.branch.address : 'Выберите филиал для самовывоза.')
     : quote.branch ? 'Ваш заказ будет приготовлен в ближайшем TOK BURGER.'
-      : s.address ? (quote.pick?.reason === 'CLOSED' ? 'Филиал на перерыве — выберите время после 08:00.' : 'Ни один филиал не обслуживает этот адрес.') : 'Укажите адрес на карте.';
+      : s.address ? (quote.pick?.reason === 'CLOSED' ? 'Филиал на перерыве — выберите время после 08:00.' : (quote.pick?.reason === 'OUTSIDE_CITY' ? 'Доставляем только по Алматы.' : 'Сейчас ни один филиал не принимает заказы.')) : 'Укажите адрес на карте.';
 
   const placeText = !s.cart.length ? 'Корзина пуста'
     : !session.user ? `Войти и оформить · ${fmt(payable)}`

@@ -26,6 +26,7 @@ export async function POST(req: Request) {
 
   const { data: status, error } = await db.rpc('otp_issue', {
     p_phone: phone, p_hash: hashOtp(phone, code), p_ip: clientIp(req.headers), p_ttl_seconds: OTP_TTL_SECONDS,
+    p_skip_limits: !!testCode, // owner-approved test numbers only
   });
   if (error) return NextResponse.json({ error: 'SERVER_ERROR' }, { status: 500 });
   if (status === 'COOLDOWN') return NextResponse.json({ error: 'COOLDOWN', retryAfter: OTP_RESEND_SECONDS }, { status: 429 });
