@@ -1,0 +1,19 @@
+{
+  "name": "tok-burger-whatsapp-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TOK BURGER WhatsApp OTP sender (whatsapp-web.js). Standalone service, not part of the Next.js build.",
+  "main": "index.mjs",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env index.mjs",
+    "check": "node --check index.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.0"
+  }
+}

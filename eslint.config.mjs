@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "whatsapp-bot/**",
+    ".open-next/**",
+    ".wrangler/**",
+    "tests/db/**",
   ]),
 ]);
 

@@ -1,26 +1,61 @@
 @import "tailwindcss";
 
+/* TOK BURGER design tokens (from the approved Claude Design prototype) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --orange: #FF6A0A;
+  --ink: #141210;
+  --cream: #FFF6EC;
+  --sand: #F3EADF;
+  --peach: #FFF1E0;
+  --rust: #C24D00;
+  --muted: #6B6258;
+  --green: #2E8B3F;
+  --red: #B3261E;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+html, body { background: #EFE3D3; }
+body { margin: 0; font-family: var(--font-manrope), system-ui, sans-serif; color: var(--ink); -webkit-tap-highlight-color: transparent; }
+button { font-family: inherit; cursor: pointer; border: 0; color: inherit; background: none; }
+button:disabled { cursor: default; }
+input, textarea, select { font-family: inherit; color: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+.disp { font-family: var(--font-unbounded), var(--font-manrope), sans-serif; letter-spacing: -0.02em; }
+.scr { scrollbar-width: none; }
+.scr::-webkit-scrollbar { display: none; }
+.btn { transition: transform .15s, box-shadow .2s, opacity .2s; }
+.btn:active { transform: scale(.96); }
+.hov { transition: transform .3s; }
+.hov:hover { transform: scale(1.06) rotate(-2deg); }
+.scr-in { animation: up .35s ease both; }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+@keyframes pop1 { 0% { transform: scale(1) } 40% { transform: scale(1.5) } 100% { transform: scale(1) } }
+@keyframes up { from { transform: translateY(24px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes toast { 0% { transform: translateY(-20px); opacity: 0 } 12% { transform: none; opacity: 1 } 88% { transform: none; opacity: 1 } 100% { transform: translateY(-20px); opacity: 0 } }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(255,106,10,.55) } 100% { box-shadow: 0 0 0 18px rgba(255,106,10,0) } }
+@keyframes float { 0%,100% { transform: translateY(0) rotate(-4deg) } 50% { transform: translateY(-8px) rotate(-2deg) } }
+@keyframes spin { to { transform: rotate(360deg) } }
+@keyframes shake { 0%,100% { transform: none } 20%,60% { transform: translateX(-6px) } 40%,80% { transform: translateX(6px) } }
+
+/* App frame: mobile-first column, centered on tablet/desktop */
+.app-frame { max-width: 480px; margin: 0 auto; min-height: 100dvh; background: var(--cream); position: relative; display: flex; flex-direction: column; box-shadow: 0 0 60px rgba(120,60,0,.12); }
+.app-main { flex: 1; display: flex; flex-direction: column; min-height: 0; padding-bottom: 84px; }
+.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; z-index: 40; background: #fff; border-radius: 26px 26px 0 0; display: flex; padding: 8px 8px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 24px rgba(120,60,0,.1); }
+.sticky-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; z-index: 40; }
+
+.card { background: #fff; border-radius: 22px; padding: 16px; }
+.field { height: 48px; border-radius: 14px; border: 2px solid var(--sand); padding: 0 12px; font-size: 14px; font-weight: 700; outline: none; min-width: 0; width: 100%; box-sizing: border-box; background: #fff; }
+.field:focus { border-color: var(--orange); }
+.pill { min-height: 44px; padding: 0 18px; border-radius: 22px; font-weight: 800; font-size: 14px; }
+.primary { background: var(--orange); color: #fff; font-weight: 800; box-shadow: 0 10px 22px rgba(255,106,10,.4); }
+.dark { background: var(--ink); color: #fff; font-weight: 800; }
+.spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; }
+.spinner.dark-s { border-color: rgba(20,18,16,.15); border-top-color: var(--orange); }
+
+/* Leaflet container rounding */
+.leaflet-container { font-family: inherit; background: #EFE6D8; }
+
+/* Staff dashboards are wide */
+.staff-frame { min-height: 100dvh; background: var(--sand); }

@@ -1,0 +1,93 @@
+'use client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { sb } from '@/lib/supabase/client';
+import { ACTIVE } from '@/features/orders/status';
+import type { Branch, OrderRow } from '@/types/catalog';
+import { beep } from './sound';
+
+export type KBranch = Pick<Branch, 'id' | 'short_name' | 'name'>;
+
+/** Start of the current day in Almaty (UTC+5), as ISO. */
+export function startOfAlmatyDay(now = new Date()): string {
+  const shifted = new Date(now.getTime() + 5 * 3600_000);
+  const utcMidnight = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+  return new Date(utcMidnight - 5 * 3600_000).toISOString();
+}
+
+/** Branches the signed-in staff member works at (ADMIN: all). */
+export function useStaffBranches(userId: string | undefined, isAdmin: boolean) {
+  const [branches, setBranches] = useState<KBranch[] | null>(null);
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      let q = sb().from('branches').select('id,short_name,name').order('sort_order');
+      if (!isAdmin) {
+        const { data: roles } = await sb().from('user_roles').select('branch_id').eq('user_id', userId).in('role', ['KITCHEN', 'OPERATOR']);
+        const ids = Array.from(new Set((roles ?? []).map((r) => r.branch_id as string).filter(Boolean)));
+        if (!ids.length) { if (alive) setBranches([]); return; }
+        q = q.in('id', ids);
+      }
+      const { data } = await q;
+      if (alive) setBranches((data as KBranch[]) ?? []);
+    })();
+    return () => { alive = false; };
+  }, [userId, isAdmin]);
+  return branches;
+}
+
+export function useBranchOrders(branchId: string | null, muted: boolean) {
+  // keyed by branch so switching tabs shows a loader instead of the previous branch orders
+  const [data, setData] = useState<{ b: string; rows: OrderRow[] } | null>(null);
+  const orders = data && data.b === branchId ? data.rows : null;
+  const [couriers, setCouriers] = useState<Record<string, string>>({});
+  const mutedRef = useRef(muted);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async () => {
+    if (!branchId) return;
+    const { data, error } = await sb().from('orders').select('*, order_items(*)')
+      .eq('branch_id', branchId)
+      .or(`status.in.(${ACTIVE.join(',')}),created_at.gte.${startOfAlmatyDay()}`)
+      .order('created_at', { ascending: true })
+      .limit(300);
+    if (error) return;
+    const rows = (data as OrderRow[]) ?? [];
+    setData({ b: branchId, rows });
+    const ids = Array.from(new Set(rows.map((o) => o.courier_id).filter((x): x is string => !!x)));
+    if (ids.length) {
+      const { data: cs } = await sb().from('couriers').select('user_id,display_name').in('user_id', ids);
+      setCouriers(Object.fromEntries((cs ?? []).map((c) => [c.user_id as string, c.display_name as string])));
+    }
+  }, [branchId]);
+
+  const scheduleLoad = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(load, 250);
+  }, [load]);
+
+  useEffect(() => {
+    if (!branchId) return;
+    const first = setTimeout(load, 0);
+    const ch = sb().channel('kitchen-' + branchId)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `branch_id=eq.${branchId}` }, () => {
+        if (!mutedRef.current) beep();
+        scheduleLoad();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `branch_id=eq.${branchId}` }, scheduleLoad)
+      .subscribe();
+    const onVis = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVis);
+    const poll = setInterval(load, 60_000); // safety net if the websocket drops
+    return () => {
+      sb().removeChannel(ch);
+      document.removeEventListener('visibilitychange', onVis);
+      clearInterval(poll);
+      clearTimeout(first);
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [branchId, load, scheduleLoad]);
+
+  return { orders, couriers, reload: load };
+}
