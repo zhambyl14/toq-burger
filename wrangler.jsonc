@@ -2,6 +2,16 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "toq-burger",
 	"main": ".open-next/worker.js",
+	// public URL: https://toq-burger.tarazblt12005.workers.dev
+	"workers_dev": true,
+	"preview_urls": true,
+	// non-secret runtime vars (secrets are set with `wrangler secret put` / dashboard)
+	"vars": {
+		"NEXT_PUBLIC_SUPABASE_URL": "https://lriekmwkbrllwixdlbux.supabase.co",
+		"NEXT_PUBLIC_PAYMENT_METHODS": "CASH",
+		"AUTH_INTERNAL_EMAIL_DOMAIN": "wa.tokburger.invalid"
+	},
+	"keep_vars": true,
 	"compatibility_date": "2026-10-01",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"assets": {
