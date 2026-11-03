@@ -106,6 +106,8 @@ await expect('otp cooldown', () => sr(`select otp_issue('+77011111111','hash2','
 await expect('otp wrong', () => sr(`select otp_verify('+77011111111','nope') r`), (r) => r.rows[0].r === 'INVALID');
 await expect('otp right', () => sr(`select otp_verify('+77011111111','hash1') r`), (r) => r.rows[0].r === 'OK');
 await expect('otp reuse rejected', () => sr(`select otp_verify('+77011111111','hash1') r`), (r) => r.rows[0].r === 'NOT_FOUND');
+await expect('new code allowed right after successful login', () => sr(`select otp_issue('+77011111111','hashR',null) r`), (r) => r.rows[0].r === 'OK');
+await expect('cooldown while unused code is active', () => sr(`select otp_issue('+77011111111','hashR2',null) r`), (r) => r.rows[0].r === 'COOLDOWN');
 await expect('otp locks after 5 wrong', async () => { await db.query(`update whatsapp_otp_verifications set created_at = now() - interval '2 minutes'`); await sr(`select otp_issue('+77011111111','hash3',null)`); for (let i = 0; i < 4; i++) await sr(`select otp_verify('+77011111111','x')`); return sr(`select otp_verify('+77011111111','x') r`); }, (r) => r.rows[0].r === 'LOCKED');
 await expect('locked code unusable even if right', () => sr(`select otp_verify('+77011111111','hash3') r`), (r) => r.rows[0].r === 'NOT_FOUND');
 await expect('otp expired', async () => { await db.query(`update whatsapp_otp_verifications set created_at = now() - interval '2 minutes'`); await sr(`select otp_issue('+77011111111','hash4',null)`); await db.query(`update whatsapp_otp_verifications set expires_at = now() - interval '1 second' where otp_hash='hash4'`); return sr(`select otp_verify('+77011111111','hash4') r`); }, (r) => r.rows[0].r === 'EXPIRED');
