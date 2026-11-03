@@ -16,7 +16,13 @@ export function lineKey(productId: string, meat: Meat, extraIds: string[]): stri
 export function unitPrice(product: Product | undefined, meat: Meat, extraIds: string[], extras: Extra[]): number | null {
   const v = product?.variants.find((x) => x.meat === meat);
   if (!v || v.price == null) return null;
-  return v.price + extraIds.reduce((s, id) => s + (extras.find((e) => e.id === id)?.price ?? 0), 0);
+  let sum = v.price;
+  for (const id of extraIds) {
+    const e = extras.find((x) => x.id === id);
+    if (!e || e.groupId !== product?.extraGroupId) return null;
+    sum += e.price;
+  }
+  return sum;
 }
 
 export function addLine(cart: CartLine[], item: Omit<CartLine, 'key'>): CartLine[] {

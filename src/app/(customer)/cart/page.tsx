@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useCatalog } from '@/components/CatalogProvider';
 import { ProductImg, Spinner, toast } from '@/components/ui';
 import { meatName, useMounted, variantImage } from '@/features/catalog/hooks';
@@ -18,13 +18,29 @@ export default function CartPage() {
   const s = useApp();
   const quote = useQuote();
   const [promoInput, setPromoInput] = useState(s.promo);
-  const [discount, setDiscount] = useState<number | null>(null);
+  const [discount, setDiscount] = useState<{ code: string; amount: number } | null>(null);
   const [checking, setChecking] = useState(false);
+
+  const tot = cartTotals(s.cart, products, extras, quote.fee);
+  const promoCode = s.promo;
+  const subtotal = tot.subtotal;
+  const setApp = s.set;
+
+  useEffect(() => {
+    if (!promoCode || subtotal <= 0 || !supabaseConfigured()) return;
+    let alive = true;
+    sb().rpc('quote_promo', { p_code: promoCode, p_subtotal: subtotal }).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) return;
+      if (data == null) { setApp({ promo: '' }); setDiscount(null); return; }
+      setDiscount({ code: promoCode, amount: data as number });
+    });
+    return () => { alive = false; };
+  }, [promoCode, subtotal, setApp]);
 
   if (!mounted) return <div style={{ padding: 40, textAlign: 'center' }}><Spinner dark /></div>;
 
-  const tot = cartTotals(s.cart, products, extras, quote.fee);
-  const disc = s.promo && discount ? Math.min(discount, tot.subtotal) : 0;
+  const disc = s.promo && discount && discount.code === s.promo ? Math.min(discount.amount, tot.subtotal) : 0;
 
   const applyPromo = async () => {
     const code = promoInput.trim().toUpperCase();
@@ -35,7 +51,7 @@ export default function CartPage() {
     setChecking(false);
     if (error || data == null) { s.set({ promo: '' }); setDiscount(null); toast('Промокод не найден'); return; }
     s.set({ promo: code });
-    setDiscount(data as number);
+    setDiscount({ code, amount: data as number });
     toast('Промокод применён');
   };
 
@@ -62,7 +78,14 @@ export default function CartPage() {
         {s.cart.map((l) => {
           const p = products.find((x) => x.id === l.productId);
           const u = unitPrice(p, l.meat, l.extraIds, extras);
-          if (!p) return null;
+          if (!p) {
+            return (
+              <div key={l.key} style={{ background: '#fff', borderRadius: 22, padding: 14, boxShadow: '0 8px 22px rgba(120,60,0,.07)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 15, color: '#B3261E' }}>Позиция больше недоступна</div>
+                <button className="btn" onClick={() => s.remove(l.key)} aria-label="Удалить" style={{ flex: 'none', width: 44, height: 44, fontSize: 18, color: '#8A7F73' }}>✕</button>
+              </div>
+            );
+          }
           const isB = p.category === 'burgers';
           const other = l.meat === 'beef' ? 'chicken' : 'beef';
           const canSwitch = isB && p.variants.some((v) => v.meat === other && v.price != null);

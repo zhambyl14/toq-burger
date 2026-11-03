@@ -43,7 +43,7 @@ GitHub репосына (`zhambyl14/toq-burger`, `main` тармағы) әр pus
 | `WHATSAPP_BOT_TOKEN` | Secret | ботпен бірдей токен |
 | `TEST_OTP_PHONES` | Secret | тест нөмірлері үтір арқылы; өшіру үшін жойыңыз |
 | `TEST_OTP_CODE` | Secret | тест коды |
-| `AUTH_INTERNAL_EMAIL_DOMAIN` | Text | `mail.ru` |
+| `AUTH_INTERNAL_EMAIL_DOMAIN` | Text | `wa.tokburger.invalid` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Text | 2-бөліммен бірдей (runtime үшін де) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Text | 2-бөліммен бірдей |
 | `NEXT_PUBLIC_PAYMENT_METHODS` | Text | 2-бөліммен бірдей |

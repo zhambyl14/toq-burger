@@ -20,7 +20,7 @@ function Profile() {
   const sp = useSearchParams();
   const session = useSession();
   const mounted = useMounted();
-  const { products } = useCatalog();
+  const { products, extras: catalogExtras } = useCatalog();
   const app = useApp();
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [addrs, setAddrs] = useState<Addr[]>([]);
@@ -106,7 +106,7 @@ function Profile() {
     o.order_items?.forEach((it) => {
       const p = products.find((x) => x.name === it.product_name);
       if (!p) return;
-      const extraIds = it.extras.map((e) => e.id);
+      const extraIds = it.extras.map((e) => e.id).filter((id) => catalogExtras.some((x) => x.id === id && x.groupId === p.extraGroupId));
       app.add({ productId: p.id, meat: it.meat as Meat, qty: it.quantity, extraIds });
       added++;
     });

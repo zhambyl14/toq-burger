@@ -166,13 +166,12 @@ function HoursEditor({ branchId, hours, onSaved }: { branchId: string; hours: Ho
     const keys = rows.map((r) => `${r.day}-${r.open}`);
     if (new Set(keys).size !== keys.length) return toast('Есть повторяющиеся окна');
     setBusy(true);
-    const del = await sb().from('branch_working_hours').delete().eq('branch_id', branchId);
-    if (del.error) { setBusy(false); return toast(errText(del.error.message)); }
-    if (rows.length) {
-      const ins = await sb().from('branch_working_hours').insert(rows.map((r) => ({ branch_id: branchId, day_of_week: r.day, open_time: r.open, close_time: r.close })));
-      if (ins.error) { setBusy(false); return toast(errText(ins.error.message)); }
-    }
+    const { error } = await sb().rpc('admin_set_branch_hours', {
+      p_branch: branchId,
+      p_rows: rows.map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
+    });
     setBusy(false);
+    if (error) return toast(errText(error.message));
     toast('Часы работы сохранены');
     onSaved();
   };

@@ -29,6 +29,8 @@ const promoSchema = z.object({
 type Form = z.input<typeof promoSchema>;
 const EMPTY: Form = { code: '', description: '', kind: 'percent', value: '', min_subtotal_kzt: '0', starts: '', ends: '', max_uses: '' };
 const toDay = (iso: string | null) => (iso ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).format(new Date(iso)) : '');
+// ends_at is stored exclusive (+1 day); show/edit the inclusive last day
+const toEndDay = (iso: string | null) => (iso ? toDay(new Date(new Date(iso).getTime() - 86_400_000).toISOString()) : '');
 
 export default function AdminPromotions() {
   const [list, setList] = useState<Promo[] | null>(null);
@@ -69,7 +71,7 @@ export default function AdminPromotions() {
               <td><b>{p.code}</b>{p.description && <div style={{ fontSize: 12, color: '#6B6258' }}>{p.description}</div>}</td>
               <td>{p.percent_off != null ? `−${p.percent_off}%` : `−${fmt(p.amount_off_kzt ?? 0)}`}</td>
               <td>{fmt(p.min_subtotal_kzt)}</td>
-              <td style={{ whiteSpace: 'nowrap' }}>{p.starts_at ? dateShort(p.starts_at) : '…'} – {p.ends_at ? dateShort(p.ends_at) : '…'}</td>
+              <td style={{ whiteSpace: 'nowrap' }}>{p.starts_at ? dateShort(p.starts_at) : '…'} – {p.ends_at ? dateShort(new Date(new Date(p.ends_at).getTime() - 86_400_000).toISOString()) : '…'}</td>
               <td>{p.used_count}{p.max_uses != null ? ` / ${p.max_uses}` : ''}</td>
               <td><Toggle on={p.is_active} onChange={(v) => toggle(p, v)} label={`Активность ${p.code}`} /></td>
               <td style={{ whiteSpace: 'nowrap' }}>
@@ -89,7 +91,7 @@ function PromoEditor({ promo, onClose, onSaved }: { promo: Promo | null; onClose
   const [f, setF] = useState<Form>(promo ? {
     code: promo.code, description: promo.description ?? '', kind: promo.percent_off != null ? 'percent' : 'amount',
     value: String(promo.percent_off ?? promo.amount_off_kzt ?? ''), min_subtotal_kzt: String(promo.min_subtotal_kzt),
-    starts: toDay(promo.starts_at), ends: toDay(promo.ends_at), max_uses: promo.max_uses == null ? '' : String(promo.max_uses),
+    starts: toDay(promo.starts_at), ends: toEndDay(promo.ends_at), max_uses: promo.max_uses == null ? '' : String(promo.max_uses),
   } : EMPTY);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');

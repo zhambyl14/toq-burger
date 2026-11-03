@@ -47,13 +47,23 @@ export function useBranchOrders(branchId: string | null, muted: boolean) {
 
   const load = useCallback(async () => {
     if (!branchId) return;
-    const { data, error } = await sb().from('orders').select('*, order_items(*)')
-      .eq('branch_id', branchId)
-      .or(`status.in.(${ACTIVE.join(',')}),created_at.gte.${startOfAlmatyDay()}`)
-      .order('created_at', { ascending: true })
-      .limit(300);
-    if (error) return;
-    const rows = (data as OrderRow[]) ?? [];
+    const [activeRes, doneRes] = await Promise.all([
+      sb().from('orders').select('*, order_items(*)')
+        .eq('branch_id', branchId)
+        .in('status', ACTIVE)
+        .order('created_at', { ascending: true })
+        .limit(1000),
+      sb().from('orders').select('*, order_items(*)')
+        .eq('branch_id', branchId)
+        .in('status', ['DELIVERED', 'CANCELLED'])
+        .gte('created_at', startOfAlmatyDay())
+        .order('created_at', { ascending: false })
+        .limit(200),
+    ]);
+    if (activeRes.error || doneRes.error) return;
+    const byId = new Map<string, OrderRow>();
+    for (const o of [...((activeRes.data as OrderRow[]) ?? []), ...((doneRes.data as OrderRow[]) ?? [])]) byId.set(o.id, o);
+    const rows = Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
     setData({ b: branchId, rows });
     const ids = Array.from(new Set(rows.map((o) => o.courier_id).filter((x): x is string => !!x)));
     if (ids.length) {

@@ -30,10 +30,16 @@ export default function TrackPage() {
   useEffect(() => {
     if (!session.user) return;
     let alive = true;
+    let retry: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
-      const { data } = await sb().from('orders').select('*, order_items(*)').eq('id', id).maybeSingle();
+      const { data, error } = await sb().from('orders').select('*, order_items(*)').eq('id', id).maybeSingle();
       if (!alive) return;
-      if (!data) setMissing(true); else setOrder(data as OrderRow);
+      if (error) {
+        if (retry) clearTimeout(retry);
+        retry = setTimeout(load, 3000);
+        return;
+      }
+      if (!data) setMissing(true); else { setMissing(false); setOrder(data as OrderRow); }
     };
     load();
     const ch = sb().channel('order-' + id)
@@ -42,7 +48,7 @@ export default function TrackPage() {
       .subscribe();
     const onVis = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => { alive = false; sb().removeChannel(ch); document.removeEventListener('visibilitychange', onVis); };
+    return () => { alive = false; if (retry) clearTimeout(retry); sb().removeChannel(ch); document.removeEventListener('visibilitychange', onVis); };
   }, [id, session.user]);
 
   // courier GPS only during an active delivery (RLS enforces the same rule)

@@ -12,7 +12,7 @@ export function normalizeKzPhone(input: string): string | null {
 
 /** Deterministic internal Supabase identity. Never shown to the customer. */
 export function internalEmailFor(e164: string): string {
-  const domain = process.env.AUTH_INTERNAL_EMAIL_DOMAIN || 'mail.ru';
+  const domain = process.env.AUTH_INTERNAL_EMAIL_DOMAIN || 'wa.tokburger.invalid';
   return `8${e164.slice(2)}@${domain}`;
 }
 

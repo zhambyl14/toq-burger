@@ -2,8 +2,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, BranchFilter, PageHead, Panel, TableWrap, useAdminBranches } from '@/components/admin/kit';
-import { Spinner } from '@/components/ui';
-import { addDays, almatyDayStart, almatyToday } from '@/features/admin/transitions';
+import { Spinner, toast } from '@/components/ui';
+import { addDays, almatyDayStart, almatyToday, errText } from '@/features/admin/transitions';
 import { ACTIVE, STATUS_COLOR, STATUS_LABEL, timeHM, dateShort } from '@/features/orders/status';
 import { fmt } from '@/lib/money';
 import { sb } from '@/lib/supabase/client';
@@ -19,7 +19,7 @@ export default function AdminDashboard() {
   const [br, setBr] = useState('all');
   const [days, setDays] = useState(1);
   const [stats, setStats] = useState<StatRow[] | null>(null);
-  const [orders, setOrders] = useState<MiniOrder[]>([]);
+  const [hours, setHours] = useState<{ hour: number; orders: number }[]>([]);
   const [recent, setRecent] = useState<MiniOrder[]>([]);
   const [share, setShare] = useState<{ n: string; q: number }[]>([]);
   const [active, setActive] = useState(0);
@@ -32,28 +32,25 @@ export default function AdminDashboard() {
     const to = almatyDayStart(addDays(today, 1));
     (async () => {
       setStats(null);
-      let oq = sb().from('orders').select('id,order_no,branch_id,status,total_kzt,created_at').gte('created_at', from).lt('created_at', to).order('created_at', { ascending: false }).limit(2000);
       let aq = sb().from('orders').select('id', { count: 'exact', head: true }).in('status', ACTIVE);
       let rq = sb().from('orders').select('id,order_no,branch_id,status,total_kzt,created_at').order('created_at', { ascending: false }).limit(10);
-      if (br !== 'all') { oq = oq.eq('branch_id', br); aq = aq.eq('branch_id', br); rq = rq.eq('branch_id', br); }
-      const [s, o, a, r, c] = await Promise.all([
-        sb().rpc('admin_stats', { p_from: from, p_to: to }), oq, aq, rq,
+      if (br !== 'all') { aq = aq.eq('branch_id', br); rq = rq.eq('branch_id', br); }
+      const pb = br === 'all' ? null : br;
+      const [s, a, r, c, t, h] = await Promise.all([
+        sb().rpc('admin_stats', { p_from: from, p_to: to }), aq, rq,
         sb().from('couriers').select('user_id', { count: 'exact', head: true }).eq('is_online', true).eq('is_active', true),
+        sb().rpc('admin_top_items', { p_from: from, p_to: to, p_branch: pb }),
+        sb().rpc('admin_orders_by_hour', { p_from: from, p_to: to, p_branch: pb }),
       ]);
       if (!alive) return;
+      const failed = [s, a, r, c, t, h].find((x) => x.error);
+      if (failed?.error) toast(errText(failed.error.message));
       setStats((s.data as StatRow[]) ?? []);
-      const list = (o.data as MiniOrder[]) ?? [];
-      setOrders(list);
+      setHours((h.data as { hour: number; orders: number }[]) ?? []);
       setActive(a.count ?? 0);
       setRecent((r.data as MiniOrder[]) ?? []);
       setOnline(c.count ?? 0);
-      const delivered = list.filter((x) => x.status === 'DELIVERED').map((x) => x.id).slice(0, 500);
-      if (delivered.length) {
-        const { data: items } = await sb().from('order_items').select('product_name,quantity').in('order_id', delivered);
-        const m = new Map<string, number>();
-        (items as { product_name: string; quantity: number }[] | null)?.forEach((i) => m.set(i.product_name, (m.get(i.product_name) ?? 0) + i.quantity));
-        if (alive) setShare(Array.from(m, ([n, q]) => ({ n, q })).sort((x, y) => y.q - x.q).slice(0, 6));
-      } else if (alive) setShare([]);
+      setShare(((t.data as { product_name: string; qty: number }[]) ?? []).slice(0, 6).map((x) => ({ n: x.product_name, q: Number(x.qty) })));
     })();
     return () => { alive = false; };
   }, [br, days]);
@@ -65,10 +62,10 @@ export default function AdminDashboard() {
   // orders by hour (Almaty)
   const bars = useMemo(() => {
     const h = new Array(24).fill(0) as number[];
-    orders.forEach((o) => { h[Number(timeHM(o.created_at).slice(0, 2))]++; });
+    hours.forEach((o) => { if (o.hour >= 0 && o.hour < 24) h[o.hour] = Number(o.orders); });
     const max = Math.max(1, ...h);
     return h.map((v, i) => ({ l: String(i).padStart(2, '0'), v, p: Math.round((v / max) * 100) }));
-  }, [orders]);
+  }, [hours]);
   const shareTotal = share.reduce((a, s) => a + s.q, 0) || 1;
   const brName = (id: string) => branches.find((b) => b.id === id)?.short_name ?? '—';
 

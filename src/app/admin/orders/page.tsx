@@ -47,7 +47,10 @@ function Orders() {
     if (to) req = req.lt('created_at', almatyDayStart(addDays(to, 1)));
     if (query) {
       const digits = query.replace(/\D/g, '');
-      if (/^(#?TB-?)?\d{1,7}$/i.test(query.replace(/\s/g, ''))) req = req.eq('order_no', Number(digits));
+      const compact = query.replace(/\s/g, '');
+      if (/^#?TB-?\d{1,7}$/i.test(compact) || /^#\d{1,7}$/.test(compact)) req = req.eq('order_no', Number(digits));
+      else if (/^\d{1,3}$/.test(compact)) req = req.eq('order_no', Number(digits));
+      else if (/^\d{4,7}$/.test(compact)) req = req.or(`order_no.eq.${Number(digits)},contact_phone.ilike.%${digits}%`);
       else if (digits.length >= 4) req = req.ilike('contact_phone', `%${digits.slice(-10)}%`);
     }
     setRows(null);

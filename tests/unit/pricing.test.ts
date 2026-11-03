@@ -25,6 +25,11 @@ describe('pricing', () => {
   it('unpriced product is not orderable', () => {
     expect(unitPrice(fanta, 'one', [], extras)).toBeNull();
   });
+  it('missing or foreign-group extra makes line unavailable', () => {
+    expect(unitPrice(mustard, 'beef', ['nope'], extras)).toBeNull();
+    const foreign: Extra[] = [{ id: 'x', slug: 'x', name: 'X', price: 100, groupId: 'other' }];
+    expect(unitPrice(mustard, 'beef', ['x'], foreign)).toBeNull();
+  });
   it('same configuration merges, extras order irrelevant', () => {
     let c = addLine([], { productId: 'm', meat: 'beef', qty: 1, extraIds: ['cs', 'bp'] });
     c = addLine(c, { productId: 'm', meat: 'beef', qty: 2, extraIds: ['bp', 'cs'] });
@@ -91,7 +96,7 @@ describe('phone', () => {
     expect(normalizeKzPhone('+7 147 400 53 47')).toBeNull();
   });
   it('deterministic internal email + mask', () => {
-    expect(internalEmailFor('+77474005347')).toBe('87474005347@mail.ru');
+    expect(internalEmailFor('+77474005347')).toBe('87474005347@wa.tokburger.invalid');
     expect(maskPhone('+77474005347')).toBe('+7 747 *** ** 47');
   });
 });

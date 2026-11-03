@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useCatalog } from '@/components/CatalogProvider';
 import { BackBtn, PinIcon, Spinner, toast } from '@/components/ui';
 import { almatyClock } from '@/features/branches/assign';
@@ -12,7 +12,7 @@ import { useSession } from '@/hooks/useSession';
 import { useApp } from '@/stores/app';
 import { fmt } from '@/lib/money';
 import { formatPhone } from '@/lib/phone';
-import { sb } from '@/lib/supabase/client';
+import { sb, supabaseConfigured } from '@/lib/supabase/client';
 import { PAYMENT_METHODS } from '@/config/payments';
 
 const ORDER_ERR: Record<string, string> = {
@@ -58,10 +58,29 @@ export default function CheckoutPage() {
   const [contactEdit, setContact] = useState<string | null>(null);
   const contact = contactEdit ?? session.phone?.slice(2) ?? '';
   const [busy, setBusy] = useState(false);
+  const [discount, setDiscount] = useState<{ code: string; amount: number } | null>(null);
+
+  const tot = cartTotals(s.cart, products, extras, quote.fee);
+  const promoCode = s.promo;
+  const subtotal = tot.subtotal;
+  const setApp = s.set;
+
+  useEffect(() => {
+    if (!promoCode || subtotal <= 0 || !supabaseConfigured()) return;
+    let alive = true;
+    sb().rpc('quote_promo', { p_code: promoCode, p_subtotal: subtotal }).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) return;
+      if (data == null) { setApp({ promo: '' }); setDiscount(null); return; }
+      setDiscount({ code: promoCode, amount: data as number });
+    });
+    return () => { alive = false; };
+  }, [promoCode, subtotal, setApp]);
 
   if (!mounted) return <div style={{ padding: 40, textAlign: 'center' }}><Spinner dark /></div>;
 
-  const tot = cartTotals(s.cart, products, extras, quote.fee);
+  const disc = s.promo && discount && discount.code === s.promo ? Math.min(discount.amount, tot.subtotal) : 0;
+  const payable = tot.total - disc;
   const isDelivery = s.mode === 'DELIVERY';
   const addrOk = !isDelivery || (!!s.address && !!quote.branch);
   const pickupOk = isDelivery || !!quote.branch;
@@ -74,10 +93,10 @@ export default function CheckoutPage() {
       : s.address ? (quote.pick?.reason === 'CLOSED' ? 'Филиал на перерыве — выберите время после 08:00.' : 'Ни один филиал не обслуживает этот адрес.') : 'Укажите адрес на карте.';
 
   const placeText = !s.cart.length ? 'Корзина пуста'
-    : !session.user ? `Войти и оформить · ${fmt(tot.total)}`
+    : !session.user ? `Войти и оформить · ${fmt(payable)}`
       : !addrOk ? 'Выберите адрес в зоне доставки'
         : !pickupOk ? 'Выберите филиал'
-          : `Оформить заказ · ${fmt(tot.total)}`;
+          : `Оформить заказ · ${fmt(payable)}`;
 
   const place = async () => {
     if (busy) return;
@@ -106,6 +125,7 @@ export default function CheckoutPage() {
       const code = Object.keys(ORDER_ERR).find((k) => error.message.includes(k));
       toast(code ? ORDER_ERR[code] : 'Не удалось оформить заказ. Попробуйте ещё раз');
       if (code === 'PROMO_INVALID') s.set({ promo: '', pendingOrderKey: null });
+      else if (code === 'EXTRA_UNAVAILABLE' || code === 'PRODUCT_UNAVAILABLE') s.set({ pendingOrderKey: null });
       return;
     }
     s.clearCart();
@@ -215,9 +235,9 @@ export default function CheckoutPage() {
       <div className="card" style={{ marginTop: 14, fontSize: 14, fontWeight: 700, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#6B6258' }}>Позиций</span><span>{tot.count}</span></div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#6B6258' }}>Сумма</span><span>{fmt(tot.subtotal)}</span></div>
-        {s.promo && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2E8B3F' }}><span>Промокод {s.promo}</span><span>применится при оформлении</span></div>}
+        {disc > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2E8B3F' }}><span>Скидка ({s.promo})</span><span>−{fmt(disc)}</span></div>}
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#6B6258' }}>Доставка</span><span>{isDelivery ? fmt(quote.fee) : '—'}</span></div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 800 }}><span>К оплате</span><span>{fmt(tot.total)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 800 }}><span>К оплате</span><span>{fmt(payable)}</span></div>
         <div style={{ fontSize: 11, color: '#6B6258', fontWeight: 600 }}>Итоговая сумма подтверждается сервером по актуальным ценам.</div>
       </div>
       <button className="btn primary" onClick={place} disabled={busy} style={{ marginTop: 14, width: '100%', height: 56, borderRadius: 28, fontSize: 16, opacity: canPlace || !session.user ? 1 : 0.45, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

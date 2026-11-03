@@ -8,7 +8,7 @@ const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const CODE = process.env.TEST_OTP_CODE;
 let pass = 0, fail = 0;
-const ok = (name, cond, extra = '') => { cond ? pass++ : fail++; console.log(cond ? 'PASS' : 'FAIL', name, cond ? '' : extra); };
+const ok = (name, cond, extra = '') => { if (cond) pass++; else fail++; console.log(cond ? 'PASS' : 'FAIL', name, cond ? '' : extra); };
 const post = async (path, body) => { const r = await fetch(BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() }; };
 
 async function login(phone, { wrongFirst = false } = {}) {
@@ -47,10 +47,13 @@ const { data: kroles } = await kitchen.rpc('my_roles');
 ok('kitchen roles', kroles?.includes('KITCHEN') && kroles?.includes('OPERATOR'), JSON.stringify(kroles));
 
 const courier = await login('+77474005350');
+const customer = await login('+77474005349');
+const { data: uroles } = await customer.rpc('my_roles');
+ok('test customer is CUSTOMER only', JSON.stringify(uroles) === '["CUSTOMER"]', JSON.stringify(uroles));
 const { data: croles } = await courier.rpc('my_roles');
 ok('courier role', croles?.includes('COURIER'), JSON.stringify(croles));
 
-// order as the admin's customer identity (pickup: does not depend on coordinate verification)
+// order as the test customer (pickup: does not depend on coordinate verification)
 const { data: prods } = await admin.from('products').select('id,slug');
 const classic = prods.find((p) => p.slug === 'classic').id;
 const { data: ex } = await admin.from('product_extras').select('id,slug');
@@ -58,12 +61,12 @@ const sauce = ex.find((e) => e.slug === 'cheese-sauce').id;
 const { data: br } = await admin.from('branches').select('id,slug');
 const zhar = br.find((b) => b.slug === 'zhar').id;
 const key = 'e2e-' + Date.now();
-const args = { p_idempotency_key: key, p_mode: 'PICKUP', p_items: [{ product_id: classic, meat: 'beef', quantity: 1, extra_ids: [sauce] }], p_payment: 'CASH', p_contact_phone: '+77474005347', p_branch_id: zhar, p_note: 'E2E тест — удалить' };
-const { data: orderId, error: oerr } = await admin.rpc('place_order', args);
+const args = { p_idempotency_key: key, p_mode: 'PICKUP', p_items: [{ product_id: classic, meat: 'beef', quantity: 1, extra_ids: [sauce] }], p_payment: 'CASH', p_contact_phone: '+77474005349', p_branch_id: zhar, p_note: 'E2E тест — удалить' };
+const { data: orderId, error: oerr } = await customer.rpc('place_order', args);
 ok('place order', !oerr && !!orderId, oerr?.message);
-const { data: again } = await admin.rpc('place_order', args);
+const { data: again } = await customer.rpc('place_order', args);
 ok('duplicate submit returns same order', again === orderId);
-const { data: o } = await admin.from('orders').select('total_kzt,status').eq('id', orderId).single();
+const { data: o } = await customer.from('orders').select('total_kzt,status').eq('id', orderId).single();
 ok('server total 2290+200=2490', o?.total_kzt === 2490, JSON.stringify(o));
 
 const { error: ce } = await courier.rpc('transition_order', { p_order: orderId, p_to: 'ACCEPTED' });
@@ -76,6 +79,8 @@ const { data: hist } = await admin.from('order_status_history').select('to_statu
 ok('status history recorded (5)', hist?.length === 5, JSON.stringify(hist));
 const { count } = await courier.from('orders').select('id', { count: 'exact', head: true }).eq('id', orderId);
 ok('courier cannot see unrelated order', count === 0);
+const { data: cust2 } = await customer.from('orders').select('status').eq('id', orderId).single();
+ok('customer sees own order DELIVERED', cust2?.status === 'DELIVERED', JSON.stringify(cust2));
 
 // cleanup with service role
 const svc = createClient(URL_, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });

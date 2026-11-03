@@ -119,7 +119,7 @@ export default function MapPage() {
         {results.length > 0 && (
           <div style={{ position: 'absolute', left: 0, right: 0, top: 56, zIndex: 20, background: '#fff', borderRadius: 16, boxShadow: '0 10px 28px rgba(120,60,0,.18)', overflow: 'hidden' }}>
             {results.map((r, i) => (
-              <button key={i} className="btn" onClick={() => { setQ(''); setPin({ lat: r.lat, lon: r.lon }); setLabel(r.label); setResults([]); }}
+              <button key={i} className="btn" onClick={() => { reqId.current++; setResolving(false); setQ(''); setPin({ lat: r.lat, lon: r.lon }); setLabel(r.label); setResults([]); }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', fontWeight: 700, fontSize: 14, borderTop: i ? '1px solid #F3EADF' : 0 }}>{r.label}</button>
             ))}
           </div>

@@ -20,7 +20,7 @@
 
 ## WhatsApp OTP login (web + future Flutter)
 1. `POST /api/auth/otp/request {phone}` → normalize `+7XXXXXXXXXX`, `otp_issue` (60 s cooldown, 5/h per phone, 20/h per IP, previous codes invalidated), HMAC-SHA256 hash stored, WhatsApp bot sends the code. If sending fails the code is deleted and the client gets an error.
-2. `POST /api/auth/otp/verify {phone, code}` → `otp_verify` (row lock, 5 attempts, 5 min TTL, one-time) → create/get Supabase user `8XXXXXXXXXX@mail.ru` (`app_metadata.phone`) → `generateLink(magiclink)` (no email is sent) → returns `tokenHash`.
+2. `POST /api/auth/otp/verify {phone, code}` → `otp_verify` (row lock, 5 attempts, 5 min TTL, one-time) → create/get Supabase user `8XXXXXXXXXX@wa.tokburger.invalid` (reserved, undeliverable TLD — nobody can receive login mail for it) (`app_metadata.phone`) → `generateLink(magiclink)` (no email is sent) → returns `tokenHash`.
 3. Client: `supabase.auth.verifyOtp({ token_hash, type: 'email' })` → genuine Supabase session.
 Test numbers (env `TEST_OTP_PHONES` + `TEST_OTP_CODE`) skip WhatsApp but use the same table, limits and session.
 
