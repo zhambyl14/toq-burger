@@ -4,8 +4,10 @@ export interface Variant {
   id: string;
   meat: Meat;
   label: string;
+  labelKk?: string | null;
   price: number | null; // null => price not set, not orderable
   nutrition: string | null;
+  nutritionKk?: string | null;
   image: string | null;
 }
 
@@ -14,9 +16,13 @@ export interface Product {
   slug: string;
   category: string;
   name: string;
+  nameKk?: string | null;
   tagline: string | null;
+  taglineKk?: string | null;
   description: string | null;
+  descriptionKk?: string | null;
   ingredients: string[];
+  ingredientsKk?: string[];
   image: string | null;
   extraGroupId: string | null;
   variants: Variant[];
@@ -26,6 +32,8 @@ export interface Extra {
   id: string;
   slug: string;
   name: string;
+  nameKk?: string | null;
+  image?: string | null; // storage path in bucket product-images
   price: number;
   groupId: string;
 }

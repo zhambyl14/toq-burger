@@ -1,8 +1,9 @@
 # Implementation status (2026-11-03)
 
 ## Done and verified
-- DB: 26 entities + staff_invites, audit_logs, OTP table; RLS; atomic functions (place_order, transition_order, courier_accept_order, release_courier, report_courier_location, OTP issue/verify). 48 PGlite tests + live E2E (37 checks) pass.
+- DB: 26 entities + staff_invites, audit_logs, OTP table; RLS; atomic functions (place_order, transition_order, courier_accept_order, release_courier, report_courier_location, OTP issue/verify). 88 PGlite tests + live E2E (43 checks) pass.
 - Customer site (approved design): home, menu+search+categories, product (meat/extras/qty), cart (meat switch, promo preview, note), checkout (delivery/pickup, address details, branch, ASAP/scheduled, payment, contact), Leaflet/OSM address picker with geolocation + search + reverse geocoding, branches map, realtime tracking with courier GPS, profile (bonus balance, name, addresses, history+reorder, favorites synced, notifications toggle, support), WhatsApp OTP login with fixed +7 prefix.
+- Moderator role, support threads (customers + couriers, order attach), named action history, product photo editor, automatic courier dispatch with batching (see ARCHITECTURE.md).
 - Kitchen/operator dashboard (realtime, sound + mute, columns, actions, stop-list), courier app (offers, atomic accept, active delivery, navigation, GPS, history), admin (dashboard stats, orders with filters/pagination/actions, products/prices/photos/availability, branches/zones/hours, staff invites, couriers, promotions, customers, support, audit log).
 - TypeScript strict 0 errors, ESLint 0 problems, production build OK.
 - Verified on the Cloudflare Workers runtime locally (OpenNext build + wrangler dev): E2E 43/43. Note: `cacheComponents` must stay OFF — it hangs on Workers.

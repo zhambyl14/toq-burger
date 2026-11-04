@@ -1,0 +1,28 @@
+/* Admin: menu & prices. Prefix apr- */
+.apr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.apr-kkwrap { position: relative; min-width: 0; }
+.apr-kkwrap .field { padding-right: 50px; }
+.apr-badge { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #FF6A0A; color: #fff; font-size: 10px; font-weight: 800; line-height: 1; padding: 4px 6px; border-radius: 8px; pointer-events: none; }
+.apr-kkwrap--ta .apr-badge { top: 10px; transform: none; }
+.apr-ta { height: auto; padding: 12px; resize: vertical; font-family: inherit; }
+
+.apr-nutri { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.apr-nutri label { display: block; font-size: 11px; font-weight: 800; color: #C24D00; line-height: 1.2; }
+.apr-nutri .field { margin-top: 4px; height: 44px; }
+.apr-variant { margin-top: 14px; padding: 14px; border: 2px solid #FF6A0A; border-radius: 18px; }
+.apr-preview { font-size: 12px; font-weight: 700; color: #6B6258; margin-top: 8px; word-break: break-word; }
+
+.apr-extra { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 2px solid #F3EADF; }
+.apr-extra:first-of-type { border-top: 0; }
+.apr-extra-img { width: 72px; height: 72px; border-radius: 16px; background: #FFF1E0; overflow: hidden; }
+.apr-extra-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 110px; gap: 8px; }
+.apr-extra-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.apr-extra-new { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 110px; gap: 8px; margin-top: 12px; }
+.apr-small-btn { min-height: 40px; padding: 0 14px; border-radius: 12px; font-weight: 800; font-size: 13px; display: inline-flex; align-items: center; }
+
+@media (max-width: 600px) {
+  .apr-pair { grid-template-columns: 1fr; }
+  .apr-nutri { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .apr-extra-fields, .apr-extra-new { grid-template-columns: 1fr 1fr; }
+  .apr-extra-fields > :first-child, .apr-extra-new > :first-child { grid-column: 1 / -1; }
+}

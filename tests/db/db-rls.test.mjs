@@ -90,10 +90,11 @@ await expect('customer cannot change phone', () => as(cust, 'authenticated', `up
 const tr = (uid, to) => as(uid, 'authenticated', `select transition_order($1,$2)`, [order, to]);
 await expect('customer cannot accept', () => tr(cust, 'ACCEPTED'), err('FORBIDDEN'));
 await expect('invalid jump PENDING->READY', () => tr(kitchen, 'READY'), err('INVALID_TRANSITION'));
+await db.query(`update couriers set is_online = true where user_id = $1`, [courier]);
 await expect('kitchen accept/prepare/ready', async () => { await tr(kitchen, 'ACCEPTED'); await tr(kitchen, 'PREPARING'); return tr(kitchen, 'READY'); }, (r) => r.rows[0].transition_order === 'READY');
-await expect('courier sees offer', () => as(courier, 'authenticated', `select count(*)::int n from courier_available_orders()`), (r) => r.rows[0].n >= 1);
-await expect('courier A wins', () => as(courier, 'authenticated', `select courier_accept_order($1) ok`, [order]), (r) => r.rows[0].ok === true);
-await expect('courier B loses (no double assignment)', () => as(courier2, 'authenticated', `select courier_accept_order($1) ok`, [order]), (r) => r.rows[0].ok === false);
+await expect('order auto-assigned to the online courier when it enters PREPARING', () => db.query(`select courier_id from orders where id=$1`, [order]), (r) => r.rows[0].courier_id === courier);
+await expect('courier cannot self-accept any more (function revoked)', () => as(courier, 'authenticated', `select courier_accept_order($1)`, [order]), err('permission denied'));
+await expect('offline courier B gets nothing', () => as(courier2, 'authenticated', `select count(*)::int n from orders where courier_id is not null`), (r) => r.rows[0].n === 0);
 await expect('courier B cannot see order', () => as(courier2, 'authenticated', `select count(*)::int n from orders where id='${order}'`), (r) => r.rows[0].n === 0);
 await expect('customer cannot see courier location before pickup', async () => { await as(courier, 'authenticated', `select report_courier_location(43.21, 76.9)`); return as(cust, 'authenticated', `select count(*)::int n from courier_locations`); }, (r) => r.rows[0].n === 0);
 await expect('courier pickup -> on the way -> delivered', async () => { await tr(courier, 'PICKED_UP'); await tr(courier, 'ON_THE_WAY'); return as(cust, 'authenticated', `select count(*)::int n from courier_locations`); }, (r) => r.rows[0].n === 1);
@@ -142,7 +143,6 @@ await expect('moderator replies; thread IN_PROGRESS + order event', async () => 
 await expect('customer sees reply', () => as(cust, 'authenticated', `select count(*)::int n from support_messages where request_id='${sreq}'`), (r) => r.rows[0].n === 1);
 await expect('other customer cannot post into the thread', () => as(cust2, 'authenticated', `insert into support_messages(request_id, author_id, body) values ('${sreq}','${cust2}','hack')`), (r, e) => !!e);
 await expect('courier support thread kind COURIER', () => as(courier, 'authenticated', `insert into support_requests(user_id, message, kind) values ('${courier}','Клиент не отвечает','COURIER') returning kind`), (r) => r.rows[0].kind === 'COURIER');
-await expect('courier reject recorded with role', async () => { await as(courier2, 'authenticated', `select courier_reject_order('${mOrder}')`); return db.query(`select actor_role from order_status_history where order_id=$1 and event='COURIER_REJECTED'`, [mOrder]); }, (r) => r.rows[0]?.actor_role === 'COURIER');
 await expect('moderator cannot change staff phone', () => as(moder, 'authenticated', `select admin_change_staff_phone('+77000000040','+77000000041')`), err('FORBIDDEN'));
 await expect('admin changes staff phone (invite + profile)', async () => { await as(tAdmin, 'authenticated', `select admin_change_staff_phone('+77000000040','+77000000041')`); return db.query(`select (select phone from profiles where id=$1) p, (select count(*)::int from staff_invites where phone='+77000000041') i`, [moder]); }, (r) => r.rows[0].p === '+77000000041' && r.rows[0].i === 1);
 await expect('phone change to taken number refused', () => as(tAdmin, 'authenticated', `select admin_change_staff_phone('+77000000041','+77000000002')`), err('PHONE_TAKEN'));
@@ -157,6 +157,52 @@ await expect('customer cannot share someone else order', async () => {
   const t = await as(cust2, 'authenticated', `insert into support_requests(user_id, message) values ('${cust2}','Вопрос') returning id`);
   return as(cust2, 'authenticated', `insert into support_messages(request_id, author_id, body, order_id) values ('${t.rows[0].id}','${cust2}','чужой','${mOrder}')`);
 }, err('ORDER_NOT_YOURS'));
+
+// ================= auto dispatch =================
+const setSettings = (sql) => db.query(`update dispatch_settings set ${sql} where id = 1`);
+const prep = async (id) => { await as(kitchen, 'authenticated', `select transition_order('${id}','ACCEPTED')`); await as(kitchen, 'authenticated', `select transition_order('${id}','PREPARING')`); };
+const courierOf = async (id) => (await db.query(`select courier_id from orders where id=$1`, [id])).rows[0].courier_id;
+const newOrder = async (key, lat = 43.2125, lon = 76.9021) => (await place(cust, key, [{ product_id: classic, meat: 'beef', quantity: 1 }], lat, lon)).rows[0].id;
+
+await db.exec(`alter table couriers disable trigger trg_couriers_online_guard; update couriers set is_online = false; alter table couriers enable trigger trg_couriers_online_guard;`);
+const dNoCourier = await newOrder('key-disp-0001');
+await prep(dNoCourier);
+await expect('no online courier => order waits unassigned', async () => ({ rows: [{ c: await courierOf(dNoCourier) }] }), (r) => r.rows[0].c === null);
+await expect('courier goes online => waiting order auto-assigned', async () => { await as(courier, 'authenticated', `update couriers set is_online = true where user_id = '${courier}'`); return { rows: [{ c: await courierOf(dNoCourier) }] }; }, (r) => r.rows[0].c === courier);
+await expect('history shows system auto-assignment', () => db.query(`select actor_name, event from order_status_history where order_id=$1 and event='COURIER_ASSIGNED'`, [dNoCourier]), (r) => r.rows[0]?.actor_name === 'Система');
+await expect('courier cannot self-accept any more', () => as(courier, 'authenticated', `select courier_accept_order('${dNoCourier}')`), err('permission denied'));
+await expect('courier with active order cannot go offline', () => as(courier, 'authenticated', `update couriers set is_online = false where user_id = '${courier}'`), err('HAS_ACTIVE_ORDERS'));
+
+await db.query(`update couriers set is_online = true where user_id = $1`, [courier2]);
+const dBatch = await newOrder('key-disp-0002');
+await prep(dBatch);
+await expect('same branch + ready times close + same drop => batched on the SAME courier', async () => ({ rows: [{ c: await courierOf(dBatch) }] }), (r) => r.rows[0].c === courier);
+const dFar = await newOrder('key-disp-0003', 43.2150, 76.9100);
+await setSettings(`max_drop_distance_km = 0.3, max_bearing_diff_deg = 5`);
+await prep(dFar);
+await expect('far drop in another direction => NOT batched, goes to the free courier', async () => ({ rows: [{ c: await courierOf(dFar) }] }), (r) => r.rows[0].c === courier2);
+await setSettings(`max_drop_distance_km = 2.5, max_bearing_diff_deg = 30, ready_window_min = 0`);
+await db.exec(`update orders set preparing_at = now() - interval '20 minutes' where id in ('${dNoCourier}')`);
+const dLate = await newOrder('key-disp-0004');
+await db.exec(`alter table couriers disable trigger trg_couriers_online_guard; update couriers set is_online = false where user_id = '${courier2}'; alter table couriers enable trigger trg_couriers_online_guard;`);
+await prep(dLate);
+await expect('ready times too far apart => not batched (waits for a free courier)', async () => ({ rows: [{ c: await courierOf(dLate) }] }), (r) => r.rows[0].c === null);
+await setSettings(`ready_window_min = 3, max_batch_size = 2`);
+await expect('batch size limit respected', async () => { await db.query(`update couriers set is_online = true where user_id = $1`, [courier2]); return { rows: [{ c: await courierOf(dLate) }] }; }, (r) => r.rows[0].c === courier2);
+await setSettings(`max_batch_size = 3, max_drop_distance_km = 2.5, max_bearing_diff_deg = 30, ready_window_min = 3`);
+
+await expect('kitchen cannot reassign couriers', () => as(kitchen, 'authenticated', `select reassign_courier('${dBatch}', '${courier2}')`), err('FORBIDDEN'));
+await expect('moderator reassigns a courier', async () => { await as(moder, 'authenticated', `select reassign_courier('${dBatch}', '${courier2}')`); return { rows: [{ c: await courierOf(dBatch) }] }; }, (r) => r.rows[0].c === courier2);
+await expect('reassignment is named in history', () => db.query(`select actor_name, actor_role, note from order_status_history where order_id=$1 and event='COURIER_ASSIGNED' order by id desc limit 1`, [dBatch]), (r) => /вручную/.test(r.rows[0]?.note ?? ''));
+await expect('moderator can see which courier has the order', () => as(moder, 'authenticated', `select courier_id from orders where id='${dBatch}'`), (r) => r.rows[0].courier_id === courier2);
+await expect('courier sees only own orders', () => as(courier, 'authenticated', `select count(*)::int n from orders where courier_id <> '${courier}'`), (r) => r.rows[0].n === 0);
+await expect('pick up allowed from READY (courier arrives while it is finished)', async () => {
+  await as(kitchen, 'authenticated', `select transition_order('${dNoCourier}','READY')`);
+  return as(courier, 'authenticated', `select transition_order('${dNoCourier}','PICKED_UP') s`);
+}, (r) => r.rows[0].s === 'PICKED_UP');
+await expect('courier cannot pick up before the order is READY', () => as(courier2, 'authenticated', `select transition_order('${dBatch}','PICKED_UP')`), err('INVALID_TRANSITION'));
+await expect('dispatch settings editable by admin only', async () => { await as(tAdmin, 'authenticated', `update dispatch_settings set ready_window_min = 4 where id = 1`); return as(moder, 'authenticated', `update dispatch_settings set ready_window_min = 9 where id = 1`); }, (r, e) => !!e || r.affectedRows === 0);
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -29,3 +29,12 @@ Test numbers (env `TEST_OTP_PHONES` + `TEST_OTP_CODE`) skip WhatsApp but use the
 
 ## Money
 Integer KZT everywhere (`*_kzt integer`), `total = subtotal - discount + delivery_fee` enforced by a CHECK.
+
+## Courier auto-dispatch (migration 14)
+- Couriers never pick orders. When a DELIVERY order enters `PREPARING`, trigger → `dispatch_order()` assigns an **online** courier with no active orders (nearest by fresh GPS to the branch, else idle the longest) so they reach the branch while the kitchen finishes. Waiting orders are retried when a courier goes online or finishes (`dispatch_pending`).
+- **Batching**: a courier still heading to / waiting at a branch also receives further orders of the SAME branch when ready times differ ≤ `ready_window_min` AND drop points are ≤ `max_drop_distance_km` apart OR in the same direction (≤ `max_bearing_diff_deg`), up to `max_batch_size`. All thresholds: table `dispatch_settings` (admin UI /admin/dispatch).
+- A courier with active orders cannot go offline (trigger `HAS_ACTIVE_ORDERS`). Pick-up is allowed only from `READY`.
+- Admin and moderator can see the courier of every order and change it (`reassign_courier`, `release_courier`). Every action is stored with the actor's name and role in `order_status_history` (events STATUS / COURIER_ASSIGNED / COURIER_RELEASED / SUPPORT_REPLY / NOTE).
+
+## Roles
+ADMIN (everything), MODERATOR (orders + support, reassign couriers; no catalog/staff), KITCHEN/OPERATOR (own branch), COURIER (own deliveries + support), CUSTOMER. Staff exist only if an admin invites their phone (`staff_invites`); admins can change a staff phone (`admin_change_staff_phone`).

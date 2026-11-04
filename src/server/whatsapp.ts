@@ -19,7 +19,12 @@ export interface WhatsAppService {
 }
 
 export function otpMessage(code: string): string {
-  return `TOK BURGER\n\nВаш код подтверждения: ${code}\n\nКод действителен 5 минут.\n\nНикому не сообщайте этот код.`;
+  return `TOK BURGER
+
+Растау коды / Ваш код подтверждения: ${code}
+
+Код 5 минут жарамды / Код действителен 5 минут.
+Кодты ешкімге айтпаңыз / Никому не сообщайте этот код.`;
 }
 
 class BotProvider implements WhatsAppService {

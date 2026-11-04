@@ -13,6 +13,7 @@ const NAV: [string, string][] = [
   ['/admin/products', 'Меню и цены'],
   ['/admin/branches', 'Филиалы'],
   ['/admin/staff', 'Сотрудники и роли'],
+  ['/admin/dispatch', 'Диспетчеризация'],
   ['/admin/promotions', 'Промокоды'],
   ['/admin/customers', 'Клиенты'],
   ['/admin/support', 'Поддержка'],

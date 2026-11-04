@@ -105,3 +105,15 @@ describe('phone', () => {
     expect(maskPhone('+77474005347')).toBe('+7 747 *** ** 47');
   });
 });
+
+import { parseNutrition } from '@/features/catalog/nutrition';
+describe('nutrition parsing', () => {
+  it('parses Russian and Kazakh lines', () => {
+    expect(parseNutrition('Б 33 · Ж 33 · У 46 · 619 ккал')).toEqual({ kcal: 619, protein: 33, fat: 33, carbs: 46 });
+    expect(parseNutrition('А 41 · М 62 · Ұ 53 · 934 ккал')).toEqual({ kcal: 934, protein: 41, fat: 62, carbs: 53 });
+  });
+  it('returns null when nothing is recognisable', () => {
+    expect(parseNutrition(null)).toBeNull();
+    expect(parseNutrition('нет данных')).toBeNull();
+  });
+});

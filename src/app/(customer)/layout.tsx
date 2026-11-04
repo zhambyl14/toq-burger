@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { CatalogProvider } from '@/components/CatalogProvider';
 import { BottomNav } from '@/components/BottomNav';
+import { DesktopHeader } from '@/components/customer/DesktopHeader';
 import { Toast } from '@/components/ui';
 import { loadCatalog } from '@/features/catalog/load';
 
@@ -21,6 +22,9 @@ export default async function CustomerLayout({ children }: { children: React.Rea
     <CatalogProvider value={catalog}>
       <div className="app-frame">
         <Toast />
+        <Suspense>
+          <DesktopHeader />
+        </Suspense>
         <main className="app-main">
           <Suspense fallback={<PageFallback />}>{children}</Suspense>
         </main>

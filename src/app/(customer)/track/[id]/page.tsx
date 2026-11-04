@@ -5,14 +5,17 @@ import { useEffect, useMemo, useState } from 'react';
 import Map from '@/components/maps/Map';
 import { useCatalog } from '@/components/CatalogProvider';
 import { toast } from '@/components/ui';
-import { meatName } from '@/features/catalog/hooks';
 import { unitPrice } from '@/features/cart/pricing';
+import { BoltMark } from '@/components/customer/BoltMark';
+import { PricePill } from '@/components/customer/PricePill';
+import { useLang } from '@/i18n/LangProvider';
 import { useApp } from '@/stores/app';
-import { CUSTOMER_STEPS, PICKUP_STEPS, stepIndex } from '@/features/orders/status';
+import { courierNoteL, CUSTOMER_STEPS, PICKUP_STEPS, stepIndex, stepLabels } from '@/features/orders/status';
 import { useSession } from '@/hooks/useSession';
 import { fmt } from '@/lib/money';
 import { sb } from '@/lib/supabase/client';
-import type { OrderRow } from '@/types/catalog';
+import type { Meat, OrderRow } from '@/types/catalog';
+import '@/styles/flow.css';
 
 const ICONS: Record<string, React.ReactNode> = {
   check: <path d="m5 12 5 5 9-10" />,
@@ -41,6 +44,7 @@ function Icon({ name, size = 22, color = 'currentColor' }: { name: string; size?
 export default function TrackPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { t, tx, lang } = useLang();
   const session = useSession();
   const { branches, products, extras } = useCatalog();
   const addToCart = useApp((st) => st.add);
@@ -98,46 +102,51 @@ export default function TrackPage() {
 
   const courier = live ? courierPos : null;
   const branch = branches.find((b) => b.id === order?.branch_id);
-  const markers = useMemo(() => (branch?.lat != null ? [{ id: branch.id, lat: branch.lat, lon: branch.lon!, label: 'Филиал', active: false }] : []), [branch]);
+  const markers = useMemo(() => (branch?.lat != null ? [{ id: branch.id, lat: branch.lat, lon: branch.lon!, label: t('Филиал', 'Филиал'), active: false }] : []), [branch, t]);
   const oLat = order?.lat ?? null, oLon = order?.lon ?? null;
   const dest = useMemo(() => (oLat != null && oLon != null ? { lat: oLat, lon: oLon } : null), [oLat, oLon]);
   const route = useMemo(() => (branch?.lat != null && dest ? [{ lat: branch.lat, lon: branch.lon! }, dest] as [{ lat: number; lon: number }, { lat: number; lon: number }] : null), [branch, dest]);
 
   if (missing) {
     return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
+      <div className="fl-page" style={{ textAlign: 'center' }}>
         <div style={{ width: 88, height: 88, borderRadius: 28, background: '#FFF1E0', color: '#C24D00', margin: '40px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="bag" size={40} /></div>
-        <div className="disp" style={{ fontSize: 20, fontWeight: 800, marginTop: 20 }}>Заказ не найден</div>
-        <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 600, marginTop: 6 }}>Возможно, ссылка устарела. Все ваши заказы доступны в профиле.</div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
-          <Link href="/profile" className="btn" style={{ display: 'inline-flex', minHeight: 52, padding: '0 22px', borderRadius: 26, alignItems: 'center', textDecoration: 'none', background: '#fff', fontWeight: 800 }}>Мои заказы</Link>
-          <Link href="/" className="btn primary" style={{ display: 'inline-flex', minHeight: 52, padding: '0 22px', borderRadius: 26, alignItems: 'center', textDecoration: 'none' }}>На главную</Link>
+        <div className="disp" style={{ fontSize: 20, fontWeight: 800, marginTop: 20 }}>{t('Заказ не найден', 'Тапсырыс табылмады')}</div>
+        <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 600, marginTop: 6 }}>{t('Возможно, ссылка устарела. Все ваши заказы доступны в профиле.', 'Сілтеме ескірген болуы мүмкін. Барлық тапсырыстарыңыз профильде.')}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20, flexWrap: 'wrap' }}>
+          <Link href="/profile" className="btn" style={{ display: 'inline-flex', minHeight: 52, padding: '0 22px', borderRadius: 26, alignItems: 'center', textDecoration: 'none', background: '#fff', fontWeight: 800 }}>{t('Мои заказы', 'Менің тапсырыстарым')}</Link>
+          <Link href="/" className="btn primary" style={{ display: 'inline-flex', minHeight: 52, padding: '0 22px', borderRadius: 26, alignItems: 'center', textDecoration: 'none' }}>{t('На главную', 'Басты бетке')}</Link>
         </div>
       </div>
     );
   }
   if (!order) {
     return (
-      <div aria-busy="true" aria-label="Загрузка заказа">
-        <div style={{ background: '#141210', height: 150, borderRadius: '0 0 32px 32px' }} />
-        <div style={{ padding: 16 }}>
-          {[190, 90, 140].map((h, i) => <div key={i} style={{ height: h, borderRadius: 22, background: '#fff', marginTop: i ? 14 : 0, animation: 'fade .9s ease-in-out infinite alternate' }} />)}
+      <div aria-busy="true" aria-label={t('Загрузка заказа', 'Тапсырыс жүктелуде')}>
+        <div className="fl-trk__head" style={{ height: 150 }} />
+        <div className="fl-trk">
+          {[190, 90, 140].map((h, i) => <div key={i} style={{ height: h, borderRadius: 22, background: '#fff', animation: 'fade .9s ease-in-out infinite alternate' }} />)}
         </div>
       </div>
     );
   }
 
   const pickup = order.mode === 'PICKUP';
-  const steps = pickup ? PICKUP_STEPS : CUSTOMER_STEPS;
+  const stepsRu = pickup ? PICKUP_STEPS : CUSTOMER_STEPS; // icon lookup keys
+  const steps = stepLabels(order.mode, lang);
   const st = stepIndex(order.status, order.mode);
   const cancelled = order.status === 'CANCELLED';
   const delivered = order.status === 'DELIVERED';
-  const label = cancelled ? 'Заказ отменён' : steps[st];
+  const label = cancelled ? t('Заказ отменён', 'Тапсырыс бас тартылды') : steps[st];
+  const note = cancelled ? null : courierNoteL(order.status, order.mode, !!order.courier_id, lang);
+  const meatL = (m: Meat) => (m === 'beef' ? t('Говядина', 'Сиыр еті') : m === 'chicken' ? t('Курица', 'Тауық еті') : '');
+  const itemName = (nm: string) => { const p = products.find((x) => x.name === nm); return p ? tx(p.name, p.nameKk) : nm; };
+  const extraName = (e: { id: string; name: string }) => { const x = extras.find((y) => y.id === e.id); return x ? tx(x.name, x.nameKk) : e.name; };
 
   const cancel = async () => {
-    if (!confirm('Отменить заказ?')) return;
+    if (!confirm(t('Отменить заказ?', 'Тапсырыстан бас тартасыз ба?'))) return;
     const { error } = await sb().rpc('transition_order', { p_order: order.id, p_to: 'CANCELLED', p_note: 'Отменён клиентом' });
-    toast(error ? 'Заказ уже принят кухней — отмена через поддержку' : 'Заказ отменён');
+    toast(error ? t('Заказ уже принят кухней — отмена через поддержку', 'Тапсырыс асханада қабылданды — бас тарту қолдау қызметі арқылы') : t('Заказ отменён', 'Тапсырыс бас тартылды'));
   };
 
   const repeat = () => {
@@ -150,78 +159,89 @@ export default function TrackPage() {
       addToCart({ productId: p.id, meat: it.meat, qty: it.quantity, extraIds: exIds });
       added++;
     }
-    if (!added) { toast('Эти позиции сейчас недоступны'); return; }
-    toast(skipped ? `Добавлено в корзину. Недоступно позиций: ${skipped}` : 'Заказ добавлен в корзину');
+    if (!added) { toast(t('Эти позиции сейчас недоступны', 'Бұл позициялар қазір қолжетімсіз')); return; }
+    toast(skipped ? `${t('Добавлено в корзину. Недоступно позиций:', 'Себетке қосылды. Қолжетімсіз позициялар:')} ${skipped}` : t('Заказ добавлен в корзину', 'Тапсырыс себетке қосылды'));
     router.push('/cart');
   };
 
   return (
     <div className="scr-in" style={{ paddingBottom: 16 }}>
-      <div style={{ background: '#141210', color: '#fff', padding: '16px 16px 26px', borderRadius: '0 0 32px 32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ flex: 'none', width: 56, height: 56, borderRadius: 20, background: cancelled ? '#B3261E' : delivered ? '#2E8B3F' : '#FF6A0A', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: cancelled || delivered ? 'none' : 'ping 1.4s infinite' }}>
-            <Icon name={cancelled ? 'bag' : iconFor(steps[st])} size={28} />
+      <div className="fl-trk__head">
+        <div className="fl-trk__bolt" aria-hidden="true"><BoltMark size={170} rotate={14} /></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+          <div className="fl-trk__ico" style={{ background: cancelled ? '#B3261E' : delivered ? '#2E8B3F' : '#FF6A0A', animation: cancelled || delivered ? 'none' : 'ping 1.4s infinite' }}>
+            <Icon name={cancelled ? 'bag' : iconFor(stepsRu[st])} size={28} />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6A0A', letterSpacing: '.1em' }}>ЗАКАЗ #TB-{order.order_no}</div>
-            <h1 className="disp" style={{ fontSize: 22, fontWeight: 800, marginTop: 4, lineHeight: 1.1 }} aria-live="polite">{label}</h1>
+            <div className="fl-trk__no">{t('ЗАКАЗ', 'ТАПСЫРЫС')} #TB-{order.order_no}</div>
+            <h1 className="disp fl-trk__label" aria-live="polite">{label}</h1>
           </div>
         </div>
-        <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6, fontWeight: 600 }}>Филиал: {branch?.name ?? '—'} · {pickup ? 'самовывоз' : 'доставка'}</div>
-        <div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,.18)', marginTop: 16, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${cancelled ? 0 : Math.round((st / (steps.length - 1)) * 100)}%`, background: '#FF6A0A', borderRadius: 4, transition: 'width .8s ease' }} />
+        <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6, fontWeight: 600, position: 'relative' }}>{t('Филиал', 'Филиал')}: {branch?.name ?? '—'} · {pickup ? t('самовывоз', 'өзі алып кету') : t('доставка', 'жеткізу')}</div>
+        <div className="fl-bolts" role="progressbar" aria-label={t('Ход выполнения заказа', 'Тапсырыстың орындалу барысы')} aria-valuemin={0} aria-valuemax={steps.length - 1} aria-valuenow={cancelled ? 0 : st} style={{ position: 'relative' }}>
+          {steps.map((s, i) => <i key={s} className={!cancelled && (i <= st || delivered) ? 'on' : ''} />)}
         </div>
       </div>
-      <div style={{ padding: 16 }}>
-        {!cancelled && (
-          <div className="card" style={{ padding: 18 }}>
-            {steps.map((s, i) => {
-              const done = i < st || delivered, act = i === st && !delivered;
-              const last = i === steps.length - 1;
-              return (
-                <div key={s} style={{ display: 'flex', gap: 14, alignItems: 'flex-start', paddingBottom: last ? 0 : 18, position: 'relative' }}>
-                  <div style={{ flex: 'none', width: 24, height: 24, borderRadius: '50%', background: done ? '#2E8B3F' : act ? '#FF6A0A' : '#E5DACB', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 800, animation: act ? 'ping 1.4s infinite' : 'none' }}><Icon name={done ? 'check' : iconFor(s)} size={13} color="#fff" /></div>
-                  {!last && <div style={{ position: 'absolute', left: 11, top: 26, bottom: -2, width: 2, background: done ? '#2E8B3F' : '#E5DACB' }} />}
-                  <div style={{ fontWeight: act ? 800 : 700, fontSize: 14, color: done || act ? '#141210' : '#8A7F73', paddingTop: 2 }}>{s}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
 
-        {order.courier_id && !pickup && (
-          <div className="card" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FF6A0A', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18 }}>{(courierName ?? 'К')[0]}</div>
-            <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 15 }}>{courierName ?? 'Курьер'}</div><div style={{ fontSize: 12, color: '#6B6258', fontWeight: 700 }}>{live ? (courier ? 'Местоположение обновляется' : 'Ожидаем GPS курьера') : 'Назначен на ваш заказ'}</div></div>
-          </div>
-        )}
-
-        {!pickup && dest && (
-          <div style={{ marginTop: 14, height: 280, borderRadius: 22, overflow: 'hidden' }}>
-            <Map branches={markers} pin={dest} courier={courier} route={route} height="100%" center={dest} zoom={13} />
-          </div>
-        )}
-
-        <div className="card" style={{ marginTop: 14, fontSize: 14, fontWeight: 700 }}>
-          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>Состав заказа</div>
-          {order.order_items?.map((it) => (
-            <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', gap: 8 }}>
-              <span>{it.product_name}{it.meat !== 'one' ? ' · ' + meatName(it.meat) : ''}{it.extras.length ? ' + ' + it.extras.map((e) => e.name).join(', ') : ''} × {it.quantity}</span>
-              <span style={{ whiteSpace: 'nowrap' }}>{fmt(it.line_total_kzt)}</span>
+      <div className="fl-trk">
+        <div className="fl-trk__left">
+          {!cancelled && (
+            <div className="fl-card fl-card--o" style={{ padding: 18 }}>
+              {steps.map((s, i) => {
+                const done = i < st || delivered, act = i === st && !delivered;
+                const last = i === steps.length - 1;
+                return (
+                  <div key={s} className="fl-tl" style={{ paddingBottom: last ? 0 : 18 }}>
+                    <div className="fl-tl__dot" style={{ background: done ? '#2E8B3F' : act ? '#FF6A0A' : '#E5DACB', animation: act ? 'ping 1.4s infinite' : 'none' }}><Icon name={done ? 'check' : iconFor(stepsRu[i])} size={13} color="#fff" /></div>
+                    {!last && <div className="fl-tl__line" style={{ background: done ? '#2E8B3F' : '#E5DACB' }} />}
+                    <div style={{ paddingTop: 2 }}>
+                      <div style={{ fontWeight: act ? 800 : 700, fontSize: 14, color: done || act ? '#141210' : '#8A7F73' }}>{s}</div>
+                      {act && note && <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 700, marginTop: 2 }}>{note}</div>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-          {order.discount_kzt > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2E8B3F', padding: '4px 0' }}><span>Скидка</span><span>−{fmt(order.discount_kzt)}</span></div>}
-          {!pickup && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}><span>Доставка</span><span>{fmt(order.delivery_fee_kzt)}</span></div>}
-          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px dashed #F3EADF', marginTop: 8, paddingTop: 10, fontSize: 17, fontWeight: 800 }}><span>Итого</span><span>{fmt(order.total_kzt)}</span></div>
-          {order.address_text && <div style={{ fontSize: 12, color: '#6B6258', marginTop: 8 }}>{order.address_text}{order.apartment ? ', кв. ' + order.apartment : ''}</div>}
+          )}
+
+          {order.courier_id && !pickup && !cancelled && (
+            <div className="fl-card" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FF6A0A', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, flex: 'none' }}>{(courierName ?? t('Курьер', 'Курьер'))[0]}</div>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 15 }}>{courierName ?? t('Курьер', 'Курьер')}</div><div style={{ fontSize: 12, color: '#6B6258', fontWeight: 700 }}>{live ? (courier ? t('Местоположение обновляется', 'Орналасқан жері жаңартылып тұр') : t('Ожидаем GPS курьера', 'Курьер GPS-ін күтудеміз')) : (note ?? t('Назначен на ваш заказ', 'Тапсырысыңызға тағайындалды'))}</div></div>
+            </div>
+          )}
+
+          {!pickup && dest && (
+            <div className="fl-trk__map">
+              <Map branches={markers} pin={dest} courier={courier} route={route} height="100%" center={dest} zoom={13} />
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-          {order.status === 'PENDING' && <button className="btn" onClick={cancel} style={{ flex: 1, minHeight: 52, borderRadius: 18, background: '#F3EADF', color: '#B3261E', fontWeight: 800, fontSize: 13 }}>Отменить заказ</button>}
-          <Link href={`/profile?tab=support&order=${order.id}`} className="btn" style={{ flex: 1, minHeight: 52, borderRadius: 18, background: '#fff', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', color: '#141210', boxShadow: '0 8px 22px rgba(120,60,0,.07)' }}>Вопрос по заказу</Link>
+        <div className="fl-trk__right dsticky">
+          <div className="fl-sum" style={{ marginTop: 22 }}>
+            <BoltMark size={56} rotate={-6} style={{ position: 'absolute', left: -12, top: -26, filter: 'drop-shadow(0 4px 6px rgba(249,96,0,.25))' }} />
+            <h2 className="disp fl-sum__title">{t('Состав заказа', 'Тапсырыс құрамы')}</h2>
+            {order.order_items?.map((it) => (
+              <div key={it.id} className="fl-sum__row" style={{ alignItems: 'flex-start' }}>
+                <span>{itemName(it.product_name)}{it.meat !== 'one' ? ' · ' + meatL(it.meat) : ''}{it.extras.length ? ' + ' + it.extras.map(extraName).join(', ') : ''} × {it.quantity}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{fmt(it.line_total_kzt)}</span>
+              </div>
+            ))}
+            <div className="fl-div" aria-hidden="true"><i /></div>
+            {order.discount_kzt > 0 && <div className="fl-sum__row" style={{ color: '#2E8B3F' }}><span>{t('Скидка', 'Жеңілдік')}</span><span>−{fmt(order.discount_kzt)}</span></div>}
+            {!pickup && <div className="fl-sum__row"><span>{t('Доставка', 'Жеткізу')}</span><span>{fmt(order.delivery_fee_kzt)}</span></div>}
+            <div className="fl-sum__total"><PricePill kk="барлығы" ru="итого" price={order.total_kzt} size="lg" /></div>
+            {order.address_text && <div style={{ fontSize: 12, color: '#6B6258', marginTop: 2 }}>{order.address_text}{order.apartment ? t(', кв. ', ', пәтер ') + order.apartment : ''}</div>}
+          </div>
+
+          <div className="fl-trk__btns">
+            {order.status === 'PENDING' && <button className="btn" onClick={cancel} style={{ minHeight: 52, borderRadius: 18, background: '#F3EADF', color: '#B3261E', fontWeight: 800, fontSize: 13 }}>{t('Отменить заказ', 'Тапсырыстан бас тарту')}</button>}
+            <Link href={`/profile?tab=support&order=${order.id}`} className="btn" style={{ minHeight: 52, borderRadius: 18, background: '#fff', border: '2px solid #FFD9B8', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', color: '#141210', boxSizing: 'border-box' }}>{t('Вопрос по заказу', 'Тапсырыс бойынша сұрақ')}</Link>
+          </div>
+          {delivered && <button className="btn primary" onClick={repeat} style={{ marginTop: 12, width: '100%', height: 56, borderRadius: 28, fontSize: 16 }}>{t('Повторить заказ', 'Тапсырысты қайталау')}</button>}
+          {(delivered || cancelled) && <Link href="/" className="btn" style={{ marginTop: 10, width: '100%', minHeight: 52, borderRadius: 26, fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', background: '#fff', color: '#141210', boxSizing: 'border-box' }}>{delivered ? t('Приятного аппетита! На главную', 'Ас болсын! Басты бетке') : t('На главную', 'Басты бетке')}</Link>}
         </div>
-        {delivered && <button className="btn primary" onClick={repeat} style={{ marginTop: 12, width: '100%', height: 56, borderRadius: 28, fontSize: 16 }}>Повторить заказ</button>}
-        {(delivered || cancelled) && <Link href="/" className="btn" style={{ marginTop: 10, width: '100%', minHeight: 52, borderRadius: 26, fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', background: '#fff', color: '#141210', boxSizing: 'border-box' }}>{delivered ? 'Приятного аппетита! На главную' : 'На главную'}</Link>}
       </div>
     </div>
   );

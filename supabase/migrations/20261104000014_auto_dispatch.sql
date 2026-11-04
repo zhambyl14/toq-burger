@@ -40,7 +40,7 @@ revoke execute on function public.system_order_event(uuid, text, text) from publ
 -- ---------- geometry helpers ----------
 create or replace function public.bearing_deg(lat1 float8, lon1 float8, lat2 float8, lon2 float8) returns float8
 language sql immutable as $$
-  select (((degrees(atan2(
+  select ((degrees(atan2(
     sin(radians(lon2 - lon1)) * cos(radians(lat2)),
     cos(radians(lat1)) * sin(radians(lat2)) - sin(radians(lat1)) * cos(radians(lat2)) * cos(radians(lon2 - lon1))
   )) + 360)::numeric % 360)::float8

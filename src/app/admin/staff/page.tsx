@@ -1,15 +1,16 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
+import { OnlineBadge } from '@/components/admin/CourierPanels';
 import { Badge, Label, PageHead, Panel, PhoneInput, TableWrap, Toggle, useAdminBranches } from '@/components/admin/kit';
 import { Spinner, toast } from '@/components/ui';
+import { type LiveCourier, dispatchErr, useLiveCouriers } from '@/features/admin/couriers';
 import { errText } from '@/features/admin/transitions';
 import { formatPhone } from '@/lib/phone';
 import { sb } from '@/lib/supabase/client';
 
 type StaffRole = 'ADMIN' | 'MODERATOR' | 'KITCHEN' | 'OPERATOR' | 'COURIER';
 interface Invite { id: string; phone: string; role: StaffRole; branch_id: string | null; display_name: string | null; created_at: string }
-interface CourierRow { user_id: string; display_name: string; is_active: boolean; is_online: boolean }
 
 const ROLE_LABEL: Record<StaffRole, string> = { ADMIN: 'Администратор', MODERATOR: 'Модератор', KITCHEN: 'Кухня', OPERATOR: 'Оператор', COURIER: 'Курьер' };
 const ROLE_PERM: Record<StaffRole, string> = { ADMIN: 'Полный доступ', MODERATOR: 'Заказы и поддержка', KITCHEN: 'Заказы своего филиала', OPERATOR: 'Заказы своего филиала', COURIER: 'Доставки' };
@@ -109,8 +110,8 @@ export default function AdminStaff() {
   const branches = useAdminBranches();
   const [invites, setInvites] = useState<Invite[] | null>(null);
   const [registered, setRegistered] = useState<Record<string, string | null>>({});
-  const [couriers, setCouriers] = useState<CourierRow[]>([]);
-  const [courierPhones, setCourierPhones] = useState<Record<string, string>>({});
+  const live = useLiveCouriers(false);
+  const couriers = live.couriers;
   const [f, setF] = useState({ phone: '', role: 'KITCHEN' as StaffRole, branch: '', name: '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -118,29 +119,16 @@ export default function AdminStaff() {
   const [nameEdit, setNameEdit] = useState<{ phone: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
-    const [i, c] = await Promise.all([
-      sb().from('staff_invites').select('id,phone,role,branch_id,display_name,created_at').order('created_at', { ascending: false }),
-      sb().from('couriers').select('user_id,display_name,is_active,is_online').order('created_at'),
-    ]);
+    const i = await sb().from('staff_invites').select('id,phone,role,branch_id,display_name,created_at').order('created_at', { ascending: false });
     if (i.error) toast(errText(i.error.message));
-    if (c.error) toast(errText(c.error.message));
     const inv = (i.data as Invite[]) ?? [];
     setInvites(inv);
-    const cl = (c.data as CourierRow[]) ?? [];
-    setCouriers(cl);
     const phones = Array.from(new Set(inv.map((x) => x.phone)));
-    const [pr, cp] = await Promise.all([
-      phones.length ? sb().from('profiles').select('id,phone,full_name').in('phone', phones) : Promise.resolve({ data: [], error: null }),
-      cl.length ? sb().from('profiles').select('id,phone').in('id', cl.map((x) => x.user_id)) : Promise.resolve({ data: [], error: null }),
-    ]);
+    const pr = phones.length ? await sb().from('profiles').select('id,phone,full_name').in('phone', phones) : { data: [], error: null };
     if (pr.error) toast(errText(pr.error.message));
-    if (cp.error) toast(errText(cp.error.message));
     const reg: Record<string, string | null> = {};
     ((pr.data ?? []) as { phone: string; full_name: string | null }[]).forEach((p) => { reg[p.phone] = p.full_name; });
     setRegistered(reg);
-    const cph: Record<string, string> = {};
-    ((cp.data ?? []) as { id: string; phone: string }[]).forEach((p) => { cph[p.id] = p.phone; });
-    setCourierPhones(cph);
   }, []);
   useEffect(() => { (async () => { await load(); })(); }, [load]);
 
@@ -160,16 +148,17 @@ export default function AdminStaff() {
   const revoke = async (i: Invite) => {
     if (!confirm(`Снять роль «${ROLE_LABEL[i.role]}» с ${formatPhone(i.phone)}?`)) return;
     const { error } = await sb().rpc('admin_revoke_staff', { p_invite: i.id });
-    if (error) return toast(errText(error.message));
+    if (error) return toast(dispatchErr(error.message));
     toast('Доступ отозван');
     load();
+    live.reload();
   };
 
-  const setCourierActive = async (c: CourierRow, v: boolean) => {
+  const setCourierActive = async (c: LiveCourier, v: boolean) => {
     const { error } = await sb().rpc('admin_set_courier_active', { p_user: c.user_id, p_active: v });
-    if (error) return toast(errText(error.message));
+    if (error) return toast(dispatchErr(error.message));
     toast(v ? 'Курьер активен' : 'Курьер отключён — не получит новые заказы');
-    load();
+    live.reload();
   };
 
   const groups = (() => {
@@ -242,19 +231,22 @@ export default function AdminStaff() {
 
       <div style={{ marginTop: 24, fontWeight: 800, fontSize: 15 }}>Курьеры</div>
       <TableWrap>
-        <thead><tr><th>Курьер</th><th>Телефон</th><th>На линии</th><th>Активен</th></tr></thead>
+        <thead><tr><th>Курьер</th><th>Телефон</th><th>На линии</th><th>Активные заказы</th><th>Активен</th></tr></thead>
         <tbody>
-          {!couriers.length && <tr><td colSpan={4} style={{ color: '#6B6258' }}>Курьеров пока нет — выдайте роль «Курьер» выше.</td></tr>}
+          {!live.ready && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30 }}><Spinner dark /></td></tr>}
+          {live.ready && !couriers.length && <tr><td colSpan={5} style={{ color: '#6B6258' }}>Курьеров пока нет — выдайте роль «Курьер» выше.</td></tr>}
           {couriers.map((c) => (
             <tr key={c.user_id}>
               <td><b>{c.display_name}</b></td>
-              <td>{courierPhones[c.user_id] ? formatPhone(courierPhones[c.user_id]) : '—'}</td>
-              <td style={{ fontWeight: 800, color: c.is_online ? '#2E8B3F' : '#6B6258' }}>{c.is_online ? 'да' : 'нет'}</td>
+              <td>{c.phone ? formatPhone(c.phone) : '—'}</td>
+              <td><OnlineBadge online={c.is_online} /></td>
+              <td>{c.active.length ? <><b>{c.active.length}</b> · {c.active.map((o) => `#TB-${o.order_no}`).join(', ')}</> : <span style={{ color: '#6B6258' }}>нет</span>}</td>
               <td><Toggle on={c.is_active} onChange={(v) => setCourierActive(c, v)} label={`Активность курьера ${c.display_name}`} /></td>
             </tr>
           ))}
         </tbody>
       </TableWrap>
+      <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 8 }}>Курьера с активными заказами нельзя отключить или снять с роли — сначала переназначьте его заказы в разделе «Заказы».</div>
     </>
   );
 }

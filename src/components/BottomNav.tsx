@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMounted } from '@/features/catalog/hooks';
+import { useLang } from '@/i18n/LangProvider';
 import { useApp } from '@/stores/app';
 import { FloatingCart } from '@/components/customer/FloatingCart';
 
@@ -13,10 +14,10 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 
 const ITEMS = [
-  { href: '/', label: 'Главная', icon: 'home' },
-  { href: '/menu', label: 'Меню', icon: 'menu' },
-  { href: '/cart', label: 'Корзина', icon: 'cart' },
-  { href: '/profile', label: 'Профиль', icon: 'user' },
+  { href: '/', ru: 'Главная', kk: 'Басты бет', icon: 'home' },
+  { href: '/menu', ru: 'Меню', kk: 'Мәзір', icon: 'menu' },
+  { href: '/cart', ru: 'Корзина', kk: 'Себет', icon: 'cart' },
+  { href: '/profile', ru: 'Профиль', kk: 'Профиль', icon: 'user' },
 ];
 
 const HIDDEN = ['/product', '/checkout', '/auth', '/map'];
@@ -27,22 +28,23 @@ export function BottomNav() {
   const cart = useApp((s) => s.cart);
   const bump = useApp((s) => s.bump);
   const mounted = useMounted();
+  const { t } = useLang();
   if (HIDDEN.some((h) => path.startsWith(h))) return null;
   const count = mounted ? cart.reduce((a, c) => a + c.qty, 0) : 0;
 
   return (
     <>
       {WITH_CART.includes(path) && <FloatingCart />}
-    <nav className="bottom-nav" aria-label="Навигация">
+    <nav className="bottom-nav" aria-label={t('Навигация', 'Навигация')}>
       {ITEMS.map((n) => {
         const active = n.href === '/' ? path === '/' : path.startsWith(n.href);
         return (
-          <Link key={n.href} href={n.href} prefetch className="btn"
+          <Link key={n.href} href={n.href} prefetch className="btn" aria-current={active ? 'page' : undefined} aria-label={n.icon === 'cart' && count > 0 ? t(`Корзина, ${count} шт.`, `Себет, ${count} дана`) : undefined}
             style={{ flex: 1, minHeight: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: active ? '#FF6A0A' : '#6B6258', position: 'relative', textDecoration: 'none' }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[n.icon]}</svg>
-            <span style={{ fontSize: 11, fontWeight: 800 }}>{n.label}</span>
+            <span style={{ fontSize: 11, fontWeight: 800 }}>{t(n.ru, n.kk)}</span>
             {n.icon === 'cart' && count > 0 && (
-              <span key={bump} aria-label={`${count} в корзине`} style={{ position: 'absolute', top: 2, right: 'calc(50% - 26px)', minWidth: 18, height: 18, borderRadius: 9, background: '#FF6A0A', color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', animation: 'pop1 .45s ease' }}>{count}</span>
+              <span key={bump} aria-hidden="true" style={{ position: 'absolute', top: 2, right: 'calc(50% - 26px)', minWidth: 18, height: 18, borderRadius: 9, background: '#FF6A0A', color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', animation: 'pop1 .45s ease' }}>{count}</span>
             )}
           </Link>
         );

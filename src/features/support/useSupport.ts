@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@/components/ui';
 import { useSession } from '@/hooks/useSession';
 import { sb } from '@/lib/supabase/client';
-import { supportErr, type OrderInfo, type OrderOption, type SupportKind, type SupportMsg, type SupportReq, type SupportStatus } from './types';
+import { supportErr, trNow, type OrderInfo, type OrderOption, type SupportKind, type SupportMsg, type SupportReq, type SupportStatus } from './types';
 
 export interface ThreadFilters { status: 'all' | SupportStatus; kind: 'all' | SupportKind }
 
@@ -27,7 +27,7 @@ export function useThreads(scope: 'mine' | 'all', filters: ThreadFilters) {
     const { data, error } = await q;
     if (my !== seq.current) return;
     if (error) {
-      toast('Не удалось загрузить обращения');
+      toast(trNow('Не удалось загрузить обращения', 'Өтініштерді жүктеу мүмкін болмады'));
       setState((s) => s ?? { rows: [], phones: {}, orderNos: {} });
       return;
     }
@@ -39,7 +39,7 @@ export function useThreads(scope: 'mine' | 'all', filters: ThreadFilters) {
       oids.length ? sb().from('orders').select('id,order_no').in('id', oids) : Promise.resolve({ data: [], error: null }),
     ]);
     if (my !== seq.current) return;
-    if (p.error || o.error) toast('Не удалось загрузить данные заказов или клиентов');
+    if (p.error || o.error) toast(trNow('Не удалось загрузить данные заказов или клиентов', 'Тапсырыстар немесе клиенттер деректерін жүктеу мүмкін болмады'));
     const phones: Record<string, string> = {};
     ((p.data ?? []) as { id: string; phone: string }[]).forEach((x) => { phones[x.id] = x.phone; });
     const orderNos: Record<string, number> = {};
@@ -88,7 +88,7 @@ export function useThread(requestId: string) {
       sb().from('support_messages').select('*').eq('request_id', requestId).order('created_at').order('id'),
     ]);
     if (r.error || m.error) {
-      toast('Не удалось загрузить переписку');
+      toast(trNow('Не удалось загрузить переписку', 'Хат алмасуды жүктеу мүмкін болмады'));
       setData((s) => s ?? { id: requestId, req: null, msgs: [], orderNo: null });
       return;
     }
@@ -96,7 +96,7 @@ export function useThread(requestId: string) {
     let orderNo: number | null = null;
     if (req?.order_id) {
       const o = await sb().from('orders').select('order_no').eq('id', req.order_id).maybeSingle();
-      if (o.error) toast('Не удалось загрузить номер заказа');
+      if (o.error) toast(trNow('Не удалось загрузить номер заказа', 'Тапсырыс нөмірін жүктеу мүмкін болмады'));
       else orderNo = (o.data?.order_no as number | undefined) ?? null;
     }
     setData({ id: requestId, req, msgs: (m.data ?? []) as SupportMsg[], orderNo });
@@ -148,7 +148,7 @@ export async function createThread(input: { userId: string; message: string; ord
   const { data, error } = await sb().from('support_requests')
     .insert({ user_id: input.userId, message: input.message, order_id: input.orderId, kind: input.kind })
     .select('id').single();
-  if (error) { toast('Не удалось отправить обращение'); return null; }
+  if (error) { toast(trNow('Не удалось отправить обращение', 'Өтінішті жіберу мүмкін болмады')); return null; }
   return (data as { id: string }).id;
 }
 
@@ -163,7 +163,7 @@ export function useMyOrders(kind: SupportKind): OrderOption[] {
       const col = kind === 'COURIER' ? 'courier_id' : 'user_id';
       const { data, error } = await sb().from('orders').select('id,order_no,created_at').eq(col, uid).order('created_at', { ascending: false }).limit(15);
       if (!alive) return;
-      if (error) { toast('Не удалось загрузить заказы'); return; }
+      if (error) { toast(trNow('Не удалось загрузить заказы', 'Тапсырыстарды жүктеу мүмкін болмады')); return; }
       setList((data ?? []) as OrderOption[]);
     }, 0);
     return () => { alive = false; clearTimeout(t); };
@@ -181,7 +181,7 @@ export function useOrderInfos(ids: string[]): Record<string, OrderInfo> {
     const t = setTimeout(async () => {
       const { data, error } = await sb().from('orders').select('id,order_no,created_at,status,total_kzt').in('id', key.split(','));
       if (!alive) return;
-      if (error) { toast('Не удалось загрузить данные заказа'); return; }
+      if (error) { toast(trNow('Не удалось загрузить данные заказа', 'Тапсырыс деректерін жүктеу мүмкін болмады')); return; }
       const next: Record<string, OrderInfo> = {};
       ((data ?? []) as OrderInfo[]).forEach((o) => { next[o.id] = o; });
       setMap((m) => ({ ...m, ...next }));
@@ -193,7 +193,7 @@ export function useOrderInfos(ids: string[]): Record<string, OrderInfo> {
 
 export async function findOrderByNo(no: number): Promise<OrderOption | null> {
   const { data, error } = await sb().from('orders').select('id,order_no,created_at').eq('order_no', no).maybeSingle();
-  if (error) { toast('Не удалось найти заказ'); return null; }
-  if (!data) { toast('Заказ не найден'); return null; }
+  if (error) { toast(trNow('Не удалось найти заказ', 'Тапсырысты іздеу мүмкін болмады')); return null; }
+  if (!data) { toast(trNow('Заказ не найден', 'Тапсырыс табылмады')); return null; }
   return data as OrderOption;
 }

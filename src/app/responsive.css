@@ -1,0 +1,66 @@
+/*
+ * Responsive shell. Two modes:
+ *   mobile  (< 900px)  : centered phone column (max 560px), bottom navigation, sticky bottom bars
+ *   desktop (>= 900px) : full-width page (container max 1240px), top header, multi-column grids
+ * Page code must put responsive layout properties in className/CSS (NOT inline style: inline always wins).
+ * Helpers: .only-mobile / .only-desktop, .container, .dgrid (+ --2/--3/--4), .dsplit (main + sidebar).
+ */
+:root {
+  --bp-desktop: 900px;
+  --container: 1240px;
+}
+
+.only-desktop { display: none !important; }
+.only-mobile { display: revert; }
+
+/* ---------- mobile column ---------- */
+.app-frame { max-width: 560px; }
+.bottom-nav { max-width: 560px; }
+.sticky-bar { max-width: 560px; }
+.fcart-wrap { max-width: 560px; }
+
+/* ---------- desktop header (rendered by DesktopHeader, hidden on mobile) ---------- */
+.dhead { display: none; }
+
+@media (min-width: 900px) {
+  .only-desktop { display: revert !important; }
+  .only-mobile { display: none !important; }
+
+  body { background: var(--cream); }
+
+  .app-frame { max-width: none; width: 100%; box-shadow: none; background: var(--cream); }
+  .app-main { padding-bottom: 0; width: 100%; max-width: var(--container); margin: 0 auto; box-sizing: border-box; padding: 0 28px 40px; }
+  .bottom-nav { display: none !important; }
+
+  /* bottom bars become in-flow / corner elements; pages that need a sticky summary use .dsticky */
+  .sticky-bar { position: static; transform: none; max-width: none; width: auto; box-shadow: none; }
+  .fcart-wrap { left: auto; right: 28px; transform: none; bottom: 28px; width: auto; max-width: 420px; padding: 0; }
+
+  .dhead { display: block; position: sticky; top: 0; z-index: 60; background: rgba(255, 246, 236, .92); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(20, 18, 16, .06); }
+  .dhead-inner { max-width: var(--container); margin: 0 auto; padding: 0 28px; height: 72px; display: flex; align-items: center; gap: 18px; box-sizing: border-box; }
+  .dnav-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 22px; font-weight: 800; font-size: 14px; color: var(--ink); text-decoration: none; transition: background .15s, color .15s; }
+  .dnav-link:hover { background: var(--sand); }
+  .dnav-link[aria-current='page'] { background: var(--ink); color: #fff; }
+
+  .container { max-width: var(--container); margin: 0 auto; }
+  .dgrid { display: grid; gap: 18px; }
+  .dgrid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dgrid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dgrid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* main column + fixed-width sidebar (cart summary, checkout summary, track info) */
+  .dsplit { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; align-items: start; }
+  .dsticky { position: sticky; top: 92px; }
+  .dpage-title { font-size: 34px; }
+
+  /* hover affordances only make sense with a pointer */
+  .lift:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(120, 60, 0, .14); }
+}
+
+@media (min-width: 1200px) {
+  .dgrid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* tablets in portrait: a roomier phone column */
+@media (min-width: 600px) and (max-width: 899px) {
+  .mgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

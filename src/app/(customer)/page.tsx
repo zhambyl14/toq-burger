@@ -2,24 +2,26 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCatalog } from '@/components/CatalogProvider';
+import { BoltMark } from '@/components/customer/BoltMark';
+import { BrandFooter } from '@/components/customer/BrandFooter';
+import { ChampionHeader } from '@/components/customer/ChampionHeader';
 import { ComboBuilder } from '@/components/customer/ComboBuilder';
 import { HalalBadge } from '@/components/customer/HalalBadge';
-import { cleanText } from '@/components/customer/halal';
 import { LastOrderCard } from '@/components/customer/LastOrderCard';
+import { PriceText } from '@/components/customer/PriceTag';
 import { useQuickAdd } from '@/components/customer/useQuickAdd';
+import { VariantPills } from '@/components/customer/VariantPills';
 import { Heart, Logo, NotConfigured, ProductImg, toast } from '@/components/ui';
 import { isBranchOpen } from '@/features/branches/assign';
-import { defaultMeat, priceFrom, useBreak, useMounted, useNowMinute, variantImage } from '@/features/catalog/hooks';
+import { defaultMeat, priceFromL, useBreak, useMounted, useNowMinute, variantImage } from '@/features/catalog/hooks';
+import { useLang } from '@/i18n/LangProvider';
+import { LangSwitch } from '@/i18n/LangSwitch';
 import { useApp } from '@/stores/app';
-
-const STEPS: [string, string][] = [
-  ['Выберите', 'Бургеры, закуски и напитки из меню'],
-  ['Мы готовим', 'Кухня собирает ваш заказ'],
-  ['Доставим горячим', 'Доставка по Алматы или самовывоз'],
-];
+import '@/styles/home.css';
 
 export default function HomePage() {
   const { products, branches, hours, configured } = useCatalog();
+  const { t, tx, lang } = useLang();
   const router = useRouter();
   const brk = useBreak();
   const now = useNowMinute();
@@ -31,154 +33,189 @@ export default function HomePage() {
   const burgers = products.filter((p) => p.category === 'burgers');
   const champion = products.find((p) => p.slug === 'champion');
   const hero = products.find((p) => p.slug === 'double') ?? burgers[0];
-  const addrShort = mounted && address ? address.label : 'Выберите адрес';
+  const addrShort = mounted && address ? address.label : t('Выберите адрес', 'Мекенжайды таңдаңыз');
+  const chipReady = !!now && branches.length > 0;
+
+  const steps: [string, string][] = [
+    [t('Выберите', 'Таңдаңыз'), t('Бургеры, закуски и напитки из меню', 'Мәзірден бургерлер, тіскебасарлар және сусындар')],
+    [t('Мы готовим', 'Біз дайындаймыз'), t('Кухня собирает ваш заказ', 'Асхана тапсырысыңызды жинайды')],
+    [t('Доставим горячим', 'Ыстықтай жеткіземіз'), t('Доставка по Алматы или самовывоз', 'Алматы бойынша жеткізу немесе өзі алып кету')],
+  ];
 
   const classic = products.find((p) => p.slug === 'classic') ?? burgers[0];
   const tiles: { id: string; label: string; img: string | null | undefined; bg: string }[] = [
-    { id: 'beef', label: 'С говядиной', img: classic ? variantImage(classic, 'beef') : null, bg: '#FFF1E0' },
-    { id: 'chicken', label: 'С курицей', img: champion ? variantImage(champion, 'chicken') : null, bg: '#F3EADF' },
-    { id: 'sides', label: 'Фри и закуски', img: products.find((p) => p.slug === 'fries')?.image, bg: '#F3EADF' },
-    { id: 'drinks', label: 'Напитки', img: products.find((p) => p.category === 'drinks' && p.image)?.image, bg: '#FFF1E0' },
+    { id: 'beef', label: t('С говядиной', 'Сиыр етімен'), img: classic ? variantImage(classic, 'beef') : null, bg: '#FFF1E0' },
+    { id: 'chicken', label: t('С курицей', 'Тауық етімен'), img: champion ? variantImage(champion, 'chicken') : null, bg: '#F3EADF' },
+    { id: 'sides', label: t('Фри и закуски', 'Фри және тіскебасарлар'), img: products.find((p) => p.slug === 'fries')?.image, bg: '#F3EADF' },
+    { id: 'drinks', label: t('Напитки', 'Сусындар'), img: products.find((p) => p.category === 'drinks' && p.image)?.image, bg: '#FFF1E0' },
   ];
 
+  const nBr = branches.length;
+  const branchTitle = nBr
+    ? t(`${nBr} ${nBr === 1 ? 'филиал' : nBr < 5 ? 'филиала' : 'филиалов'} в Алматы`, `Алматыда ${nBr} филиал`)
+    : t('Филиалы в Алматы', 'Алматыдағы филиалдар');
+  const champText = t('Хрустящая курица, коул-слоу и порция мёда.', 'Қытырлақ тауық еті, коул-слоу және бал порциясы.');
+
   return (
-    <div className="scr scr-in" style={{ flex: 1, paddingBottom: 96 }}>
+    <div className="scr scr-in hm-page">
       {!configured && <NotConfigured />}
       {brk && (
-        <div style={{ margin: '36px 16px 0', background: '#141210', color: '#fff', borderRadius: 18, padding: '14px 16px', fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>
-          <b style={{ color: '#FF6A0A' }}>Технический перерыв 06:00–08:00.</b> Сейчас заказ можно только запланировать на время после 08:00.
+        <div className="hm-notice">
+          <b style={{ color: '#FF6A0A' }}>{t('Технический перерыв 06:00–08:00.', 'Техникалық үзіліс 06:00–08:00.')}</b>{' '}
+          {t('Сейчас заказ можно только запланировать на время после 08:00.', 'Қазір тапсырысты тек сағат 08:00-ден кейінгі уақытқа жоспарлауға болады.')}
         </div>
       )}
 
-      <div style={{ background: '#FF6A0A', borderRadius: '0 0 36px 36px', padding: '16px 16px 0', position: 'relative', overflow: 'hidden', marginTop: brk ? 16 : 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="hm-hero" style={{ marginTop: brk ? 16 : undefined }}>
+        <span aria-hidden="true" className="hm-bolt hm-hero-deco hm-hero-deco--a" />
+        <span aria-hidden="true" className="hm-bolt hm-hero-deco hm-hero-deco--b" />
+        <span aria-hidden="true" className="hm-bolt hm-hero-deco hm-hero-deco--c" />
+
+        <div className="hm-hero-top">
           <Logo />
-          <button className="btn" onClick={() => router.push('/map')} style={{ flex: 1, minWidth: 0, minHeight: 44, background: 'rgba(255,255,255,.2)', borderRadius: 14, padding: '0 12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', color: '#fff', textAlign: 'left' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85 }}>Доставка по адресу</span>
-            <span style={{ fontSize: 14, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{addrShort} ▾</span>
+          <button className="btn hm-addr" onClick={() => router.push('/map')}>
+            <span className="hm-addr-l">{t('Доставка по адресу', 'Мекенжай бойынша жеткізу')}</span>
+            <span className="hm-addr-v">{addrShort}<span aria-hidden="true"> ▾</span></span>
           </button>
-          <Link href="/menu?focus=1" className="btn" aria-label="Поиск" style={{ width: 44, height: 44, borderRadius: 14, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+          <LangSwitch variant="onOrange" />
+          <Link href="/menu?focus=1" className="btn hm-search" aria-label={t('Поиск', 'Іздеу')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#141210" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
           </Link>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap', minHeight: 28, position: 'relative', zIndex: 2 }}>
-          <HalalBadge />
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 12px', borderRadius: 14, background: 'rgba(20,18,16,.85)', color: '#fff', fontSize: 12, fontWeight: 800, visibility: now ? 'visible' : 'hidden' }}>
-            <span className="live-dot" style={{ background: brk ? '#FFB27A' : '#4CD964' }} />
-            {brk ? 'Перерыв до 08:00' : 'Открыто'}
-          </span>
+        <div className="hm-hero-copy">
+          <div className="hm-chips">
+            <HalalBadge />
+            <span className="hm-status" style={{ visibility: chipReady ? 'visible' : 'hidden' }} role={chipReady ? 'status' : undefined}>
+              <span className="live-dot" style={{ background: brk ? '#FFB27A' : '#4CD964' }} />
+              {brk ? t('Перерыв до 08:00', 'Үзіліс 08:00-ге дейін') : t('Открыто', 'Ашық')}
+            </span>
+          </div>
+
+          <div className="hm-hero-text">
+            <div className="hm-eyebrow"><BoltMark size={18} tone="ink" />TOK BURGER · АЛМАТЫ</div>
+            <h1 className={`disp hm-h1${lang === 'kk' ? ' hm-h1--kk' : ''}`}>
+              {t('ТВОЙ ГОЛОД.', 'СЕНІҢ АШТЫҒЫҢ.')}<br />{t('НАШ БУРГЕР.', 'БІЗДІҢ БУРГЕР.')}
+            </h1>
+            <div className="hm-sub">
+              {t('Готовим с любовью.', 'Сүйіспеншілікпен дайындаймыз.')}<br />{t('Доставляем горячим.', 'Ыстықтай жеткіземіз.')}
+            </div>
+          </div>
+
+          <Link href="/menu" className="btn hm-cta">{t('Заказать сейчас', 'Қазір тапсырыс беру')} →</Link>
         </div>
 
-        <div style={{ marginTop: 16, color: '#fff', position: 'relative', zIndex: 2, width: 230 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.12em', opacity: 0.9 }}>TOK BURGER · АЛМАТЫ</div>
-          <h1 className="disp" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.02, marginTop: 8, color: '#fff' }}>ТВОЙ ГОЛОД.<br />НАШ БУРГЕР.</h1>
-          <div style={{ fontSize: 14, fontWeight: 600, marginTop: 10, lineHeight: 1.35, opacity: 0.95 }}>Готовим с любовью.<br />Доставляем горячим.</div>
-        </div>
-        <div className="hov" style={{ position: 'absolute', right: -30, top: 112, width: 190, height: 160, animation: 'float 5s ease-in-out infinite' }}>
+        <div className="hov hm-hero-img" style={{ animation: 'float 5s ease-in-out infinite' }}>
           {hero && <ProductImg path={variantImage(hero, 'beef')} priority />}
         </div>
-        <Link href="/menu" className="btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '28px 0 -26px', position: 'relative', zIndex: 3, height: 56, padding: '0 26px', borderRadius: 28, background: '#141210', color: '#fff', fontSize: 17, fontWeight: 800, boxShadow: '0 14px 28px rgba(0,0,0,.3)', textDecoration: 'none', animation: 'ping 2.4s ease-out infinite' }}>Заказать сейчас →</Link>
-        <div style={{ height: 26 }} />
+        <div className="hm-hero-pad" />
       </div>
 
-      <div style={{ marginTop: 44, padding: '0 16px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-        {tiles.map((t) => (
-          <Link key={t.id} href={`/menu?cat=${t.id}`} className="btn lift" style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 76, padding: '8px 8px 8px 14px', borderRadius: 24, background: '#fff', boxShadow: '0 6px 18px rgba(120,60,0,.08)', textDecoration: 'none' }}>
-            <span style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 14, lineHeight: 1.2 }}>{t.label}</span>
-            <span style={{ flex: 'none', width: 60, height: 60, borderRadius: 18, background: t.bg, padding: 3, boxSizing: 'border-box', overflow: 'hidden' }}><ProductImg path={t.img} /></span>
+      <div className="hm-tiles">
+        {tiles.map((tl) => (
+          <Link key={tl.id} href={`/menu?cat=${tl.id}`} className="btn hm-tile">
+            <span className="hm-tile-l">{tl.label}</span>
+            <span className="hm-tile-i" style={{ background: tl.bg }}><ProductImg path={tl.img} /></span>
           </Link>
         ))}
       </div>
 
-      <LastOrderCard />
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '26px 16px 12px' }}>
-        <h2 className="disp" style={{ fontSize: 20, fontWeight: 800 }}>Хиты</h2>
-        <Link href="/menu" className="btn" style={{ color: '#C24D00', fontWeight: 800, fontSize: 14, minHeight: 44, display: 'flex', alignItems: 'center', textDecoration: 'none' }}>Всё меню</Link>
+      <div className="hm-sec-head hm-hits-head">
+        <h2 className="disp hm-h2"><BoltMark size={26} />{t('Хиты', 'Хиттер')}</h2>
+        <Link href="/menu" className="btn hm-link">{t('Всё меню', 'Бүкіл мәзір')}</Link>
       </div>
-      <div className="scr hscroll">
+      <div className="scr hscroll hm-hits" role="list" aria-label={t('Хиты', 'Хиттер')}>
         {burgers.map((b) => {
           const fav = mounted && favs.includes(b.id);
           const isClassic = b.slug === 'classic';
+          const name = tx(b.name, b.nameKk);
           return (
-            <div key={b.id} style={{ flex: 'none', width: 200, background: '#fff', borderRadius: 26, padding: 14, boxShadow: '0 10px 28px rgba(120,60,0,.1)', position: 'relative' }}>
-              <button className="btn" aria-label={`В избранное: ${b.name}`} aria-pressed={fav} onClick={() => toast(toggleFav(b.id) ? 'Добавлено в избранное' : 'Убрано из избранного')}
-                style={{ position: 'absolute', right: 10, top: 10, width: 44, height: 44, borderRadius: '50%', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div key={b.id} role="listitem" className="hm-hit">
+              <button className="btn hm-fav" aria-label={`${t('В избранное', 'Таңдаулыларға')}: ${name}`} aria-pressed={fav}
+                onClick={() => toast(toggleFav(b.id) ? t('Добавлено в избранное', 'Таңдаулыларға қосылды') : t('Убрано из избранного', 'Таңдаулылардан жойылды'))}>
                 <Heart on={fav} />
               </button>
-              <Link href={`/product/${b.slug}`} className="btn hov" aria-label={b.name} style={{ display: 'block', width: '100%', height: 120, background: isClassic ? '#FF6A0A' : '#FFF1E0', borderRadius: 20, padding: 6, boxSizing: 'border-box', overflow: 'hidden' }}>
+              <Link href={`/product/${b.slug}`} className="btn hov hm-hit-img" aria-label={name} style={{ background: isClassic ? '#FF6A0A' : '#FFF1E0' }}>
                 <ProductImg path={variantImage(b, defaultMeat(b))} fit={isClassic ? 'cover' : 'contain'} />
               </Link>
-              <div className="disp" style={{ fontSize: 15, fontWeight: 800, marginTop: 10 }}>{b.name}</div>
-              <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 2, minHeight: 32, lineHeight: 1.3 }}>{b.tagline}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                <div style={{ fontWeight: 800, fontSize: 15 }}>{priceFrom(b)}</div>
-                <button className="btn" aria-label={`Добавить в корзину: ${b.name}`} onClick={() => quickAdd(b)} style={{ width: 44, height: 44, borderRadius: '50%', background: '#FF6A0A', color: '#fff', fontSize: 24, fontWeight: 800, boxShadow: '0 8px 16px rgba(255,106,10,.4)' }}>+</button>
-              </div>
+              <div className="disp hm-hit-name">{name}</div>
+              <div className="hm-hit-tag">{tx(b.tagline, b.taglineKk)}</div>
+              <VariantPills product={b} />
+              <button className="btn hm-add" aria-label={`${t('Добавить в корзину', 'Себетке қосу')}: ${name}`} onClick={() => quickAdd(b)}>+</button>
             </div>
           );
         })}
       </div>
 
       {champion && (
-        <div style={{ margin: '18px 16px 0', borderRadius: 28, background: '#141210', color: '#fff', padding: 20, position: 'relative', overflow: 'hidden', minHeight: 170 }}>
-          <div style={{ position: 'absolute', right: -18, bottom: -22, width: 150, height: 130, opacity: 0.95, transform: 'rotate(8deg)' }}>
-            <ProductImg path={champion.image} />
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.12em', color: '#FF6A0A' }}>НОВИНКА</div>
-          <div className="disp" style={{ fontSize: 24, fontWeight: 800, marginTop: 6, width: 200, lineHeight: 1.05 }}>{champion.name}</div>
-          <div style={{ fontSize: 13, opacity: 0.8, marginTop: 6, width: 190, lineHeight: 1.35 }}>{cleanText(champion.description) ?? champion.tagline}</div>
-          <Link href={`/product/${champion.slug}`} className="btn" style={{ display: 'inline-flex', alignItems: 'center', marginTop: 14, minHeight: 44, padding: '0 18px', borderRadius: 22, background: '#FF6A0A', color: '#fff', fontWeight: 800, fontSize: 14, textDecoration: 'none', position: 'relative' }}>
-            Попробовать · {priceFrom(champion)}
+        <section aria-label={t('Новинка CHAMPION', 'CHAMPION жаңалығы')} className="hm-champ">
+          <Link href={`/product/${champion.slug}`} className="hm-champ-link">
+            <ChampionHeader bodyMinHeight={230}>
+              <div className="hm-champ-body">
+                <div aria-hidden="true" className="hov hm-champ-img">
+                  <ProductImg path={champion.image} />
+                </div>
+                <div className="disp" style={{ fontSize: 22, fontWeight: 800, marginTop: 6, lineHeight: 1.05, overflowWrap: 'anywhere' }}>{tx(champion.name, champion.nameKk)}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginTop: 6, lineHeight: 1.35, maxWidth: 260 }}>{champText}</div>
+                <span className="btn hm-champ-btn">
+                  {t('Попробовать', 'Байқап көру')} · <PriceText text={priceFromL(champion, lang)} size={14} />
+                </span>
+              </div>
+            </ChampionHeader>
           </Link>
-        </div>
+          <div className="hm-champ-info">
+            <h2 className="disp hm-h2"><BoltMark size={34} />{tx(champion.name, champion.nameKk)}</h2>
+            <p className="hm-champ-d">{tx(champion.description, champion.descriptionKk) || champText}</p>
+            <VariantPills product={champion} />
+            <Link href={`/product/${champion.slug}`} className="btn hm-champ-cta">{t('Попробовать', 'Байқап көру')} →</Link>
+          </div>
+        </section>
       )}
 
-      <ComboBuilder />
+      <div className="hm-duo">
+        <ComboBuilder />
+        <LastOrderCard />
+      </div>
 
-      <section aria-label="Как мы работаем" style={{ margin: '28px 16px 0' }}>
-        <h2 className="disp" style={{ fontSize: 20, fontWeight: 800 }}>Как мы работаем</h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-          {STEPS.map(([t, d], i) => (
-            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', borderRadius: 22, padding: '12px 16px' }}>
-              <span className="disp" style={{ flex: 'none', width: 40, height: 40, borderRadius: 14, background: '#FFF1E0', color: '#C24D00', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 15 }}>{t}</div>
-                <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 2 }}>{d}</div>
+      <section aria-label={t('Как мы работаем', 'Біз қалай жұмыс істейміз')} className="hm-how">
+        <h2 className="disp hm-h2"><BoltMark size={26} />{t('Как мы работаем', 'Біз қалай жұмыс істейміз')}</h2>
+        <div className="hm-steps">
+          {steps.map(([title, d], i) => (
+            <div key={title} className="hm-step">
+              <span className="disp hm-step-n">{i + 1}</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="hm-step-t">{title}</div>
+                <div className="hm-step-d">{d}</div>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section aria-label="Филиалы" style={{ margin: '28px 16px 0' }}>
-        <h2 className="disp" style={{ fontSize: 20, fontWeight: 800 }}>{branches.length || 4} филиала в Алматы</h2>
-        <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 600, marginTop: 4 }}>Ежедневно 00:00–24:00 · перерыв 06:00–08:00</div>
-        {branches.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-            {branches.map((b) => {
-              const open = now ? isBranchOpen(b.id, hours, now) && b.accepts_orders : null;
-              return (
-                <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 14px', borderRadius: 18, background: '#fff', fontSize: 13, fontWeight: 800 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: open == null ? '#E5DACB' : open ? '#2E8B3F' : '#B3A89B' }} />
-                  {b.short_name}
-                </span>
-              );
-            })}
-          </div>
-        )}
-        <Link href="/branches" className="btn" style={{ marginTop: 12, width: '100%', minHeight: 52, borderRadius: 18, background: '#fff', fontWeight: 800, fontSize: 15, boxShadow: '0 4px 14px rgba(120,60,0,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>Адреса и карта филиалов →</Link>
+      <section aria-label={t('Филиалы', 'Филиалдар')} className="hm-branches">
+        <div>
+          <h2 className="disp hm-h2">{branchTitle}</h2>
+          <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 600, marginTop: 6 }}>{t('Ежедневно 00:00–24:00 · перерыв 06:00–08:00', 'Күн сайын 00:00–24:00 · үзіліс 06:00–08:00')}</div>
+        </div>
+        <div className="hm-br-chips">
+          {branches.map((b) => {
+            const open = now ? isBranchOpen(b.id, hours, now) && b.accepts_orders : null;
+            return (
+              <span key={b.id} className="hm-br-chip">
+                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: open == null ? '#E5DACB' : open ? '#2E8B3F' : '#B3A89B' }} />
+                {b.short_name}
+                <span className="hm-sr">{open == null ? '' : open ? t(', открыт', ', ашық') : t(', закрыт', ', жабық')}</span>
+              </span>
+            );
+          })}
+        </div>
+        <Link href="/branches" className="btn hm-br-link">{t('Адреса и карта филиалов', 'Филиалдардың мекенжайлары мен картасы')} →</Link>
       </section>
 
-      <footer style={{ margin: '28px 0 0', background: '#141210', color: '#fff', padding: '24px 16px', fontSize: 12, lineHeight: 1.6 }}>
-        <div className="disp" style={{ fontSize: 16, fontWeight: 800, color: '#FF6A0A' }}>TOK BURGER</div>
-        <div style={{ marginTop: 8 }}><HalalBadge /></div>
-        <div style={{ opacity: 0.7, marginTop: 8 }}>
-          {branches.map((b) => b.short_name).join(' · ') || 'Самал-3 · Радостовца · Жарокова · Толе би'}<br />
-          Instagram @tokburger_official
-        </div>
-      </footer>
+      <div className="hm-foot">
+        <BrandFooter branches={branches} />
+      </div>
     </div>
   );
 }
+

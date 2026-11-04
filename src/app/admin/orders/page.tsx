@@ -1,8 +1,10 @@
 'use client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
+import { CourierSection, CourierStrip } from '@/components/admin/CourierPanels';
 import { Badge, BranchFilter, Drawer, Label, PageHead, Pager, Panel, TableWrap, useAdminBranches } from '@/components/admin/kit';
 import { Spinner, toast } from '@/components/ui';
+import { type LiveCourier, useLiveCouriers } from '@/features/admin/couriers';
 import { ALL_STATUSES, addDays, almatyDayStart, errText, nextStatuses } from '@/features/admin/transitions';
 import { meatName } from '@/features/catalog/hooks';
 import { STATUS_COLOR, STATUS_LABEL, dateShort, timeHM } from '@/features/orders/status';
@@ -15,10 +17,24 @@ const PAGE = 25;
 
 interface HistoryRow {
   id: number; from_status: OrderStatus | null; to_status: OrderStatus | null; note: string | null; created_at: string;
-  actor_name: string | null; actor_role: string | null; event: 'STATUS' | 'COURIER_REJECTED' | 'COURIER_RELEASED' | 'SUPPORT_REPLY' | 'NOTE';
+  actor_name: string | null; actor_role: string | null; event: 'STATUS' | 'COURIER_ASSIGNED' | 'COURIER_REJECTED' | 'COURIER_RELEASED' | 'SUPPORT_REPLY' | 'NOTE';
 }
 const ACTOR_ROLE: Record<string, string> = { ADMIN: 'Админ', MODERATOR: 'Модератор', KITCHEN: 'Кухня', OPERATOR: 'Оператор', COURIER: 'Курьер', CUSTOMER: 'Клиент', SYSTEM: 'Система' };
-const EVENT_LABEL: Record<string, string> = { COURIER_REJECTED: 'Курьер отказался', COURIER_RELEASED: 'Курьер снят', SUPPORT_REPLY: 'Ответ поддержки', NOTE: 'Заметка' };
+const EVENT_LABEL: Record<string, string> = { COURIER_ASSIGNED: 'Курьер назначен', COURIER_REJECTED: 'Курьер отказался', COURIER_RELEASED: 'Курьер снят', SUPPORT_REPLY: 'Ответ поддержки', NOTE: 'Заметка' };
+
+/** «Курьер назначен: Имя (авто)» / «Курьер снят: Имя · причина» instead of the raw DB note. */
+function eventText(h: HistoryRow): string {
+  const note = h.note ?? '';
+  if (h.event === 'COURIER_ASSIGNED') {
+    if (note.startsWith('Автоназначение: ')) return `Курьер назначен: ${note.slice('Автоназначение: '.length)} · автоматически`;
+    if (note.startsWith('Назначен вручную: ')) return `Курьер назначен: ${note.slice('Назначен вручную: '.length)} · вручную`;
+    return `Курьер назначен${note ? `: ${note}` : ''}`;
+  }
+  if (h.event === 'COURIER_RELEASED') {
+    return note.startsWith('Снят курьер ') ? `Курьер снят: ${note.slice('Снят курьер '.length)}` : `Курьер снят${note ? `: ${note}` : ''}`;
+  }
+  return `${EVENT_LABEL[h.event] ?? h.event}${note ? ` · ${note}` : ''}`;
+}
 interface PaymentRow { id: string; method: string; status: string; amount_kzt: number; provider: string; paid_at: string | null }
 
 function Orders() {
@@ -36,6 +52,7 @@ function Orders() {
   const [total, setTotal] = useState(0);
   const [reload, setReload] = useState(0);
   const openId = sp.get('open');
+  const live = useLiveCouriers(false);
 
   useEffect(() => { const t = setTimeout(() => { setQuery(q.trim()); setPage(0); }, 400); return () => clearTimeout(t); }, [q]);
   // every filter change resets pagination
@@ -74,11 +91,17 @@ function Orders() {
   }, []);
 
   const brName = (id: string) => branches.find((b) => b.id === id)?.short_name ?? '—';
+  const courierCell = (o: OrderRow): string => {
+    if (o.mode !== 'DELIVERY') return '—';
+    if (o.courier_id) return live.couriers.find((c) => c.user_id === o.courier_id)?.display_name ?? 'Курьер';
+    return ['ACCEPTED', 'PREPARING', 'READY', 'COURIER_ASSIGNED'].includes(o.status) ? 'ищем' : '—';
+  };
   const open = (id: string | null) => router.replace(id ? `/admin/orders?open=${id}` : '/admin/orders', { scroll: false });
 
   return (
     <>
       <PageHead title="Заказы"><BranchFilter value={br} onChange={reset(setBr)} /></PageHead>
+      <CourierStrip couriers={live.couriers} ready={live.ready} />
       <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
         <input className="field" value={q} onChange={(e) => setQ(e.target.value)} placeholder="№ заказа или телефон" aria-label="Поиск" style={{ maxWidth: 240, border: 0 }} />
         <select className="field" value={status} onChange={(e) => reset(setStatus)(e.target.value as typeof status)} aria-label="Статус" style={{ maxWidth: 200, border: 0 }}>
@@ -92,10 +115,10 @@ function Orders() {
       </div>
 
       <TableWrap>
-        <thead><tr><th>Заказ</th><th>Время</th><th>Филиал</th><th>Тип</th><th>Клиент</th><th>Статус</th><th>Оплата</th><th>Сумма</th></tr></thead>
+        <thead><tr><th>Заказ</th><th>Время</th><th>Филиал</th><th>Тип</th><th>Клиент</th><th>Статус</th><th>Курьер</th><th>Оплата</th><th>Сумма</th></tr></thead>
         <tbody>
-          {rows === null && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30 }}><Spinner dark /></td></tr>}
-          {rows?.length === 0 && <tr><td colSpan={8} style={{ color: '#6B6258' }}>Ничего не найдено.</td></tr>}
+          {rows === null && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 30 }}><Spinner dark /></td></tr>}
+          {rows?.length === 0 && <tr><td colSpan={9} style={{ color: '#6B6258' }}>Ничего не найдено.</td></tr>}
           {rows?.map((o) => (
             <tr key={o.id} className="click" onClick={() => open(o.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') open(o.id); }}>
               <td><b>#TB-{o.order_no}</b></td>
@@ -104,6 +127,7 @@ function Orders() {
               <td>{o.mode === 'DELIVERY' ? 'Доставка' : 'Самовывоз'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{o.customer_name ?? ''} {formatPhone(o.contact_phone)}</td>
               <td><Badge color={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge></td>
+              <td style={{ whiteSpace: 'nowrap', fontWeight: 700, color: courierCell(o) === 'ищем' ? '#C24D00' : undefined }}>{courierCell(o)}</td>
               <td>{o.payment_method === 'CASH' ? 'Наличные' : o.payment_method === 'KASPI_QR' ? 'Kaspi QR' : 'Онлайн'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{fmt(o.total_kzt)}</td>
             </tr>
@@ -111,16 +135,15 @@ function Orders() {
         </tbody>
       </TableWrap>
       <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
-      {openId && <OrderDrawer id={openId} onClose={() => open(null)} brName={brName} onChanged={() => setReload((r) => r + 1)} />}
+      {openId && <OrderDrawer id={openId} onClose={() => open(null)} brName={brName} couriers={live.couriers} onChanged={() => setReload((r) => r + 1)} />}
     </>
   );
 }
 
-function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: () => void; brName: (id: string) => string; onChanged: () => void }) {
+function OrderDrawer({ id, onClose, brName, couriers, onChanged }: { id: string; onClose: () => void; brName: (id: string) => string; couriers: LiveCourier[]; onChanged: () => void }) {
   const [o, setO] = useState<OrderRow | null>(null);
   const [hist, setHist] = useState<HistoryRow[]>([]);
   const [pays, setPays] = useState<PaymentRow[]>([]);
-  const [courier, setCourier] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
 
@@ -137,10 +160,6 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
     setO(order);
     setHist((h.data as HistoryRow[]) ?? []);
     setPays((p.data as PaymentRow[]) ?? []);
-    if (order?.courier_id) {
-      const { data } = await sb().from('couriers').select('display_name').eq('user_id', order.courier_id).maybeSingle();
-      setCourier(data?.display_name ?? 'Курьер');
-    } else setCourier(null);
   }, [id]);
   useEffect(() => { (async () => { await load(); })(); }, [load]);
 
@@ -161,17 +180,6 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
     setNote('');
     load(); onChanged();
   };
-  const release = async () => {
-    if (!o || !confirm('Снять курьера с заказа? Заказ вернётся в «Готов».')) return;
-    setBusy(true);
-    const { error } = await sb().rpc('release_courier', { p_order: o.id, p_reason: note.trim() || null });
-    setBusy(false);
-    if (error) return toast(errText(error.message));
-    toast('Курьер снят, заказ снова доступен курьерам');
-    setNote('');
-    load(); onChanged();
-  };
-
   return (
     <Drawer open onClose={onClose} title={o ? `Заказ #TB-${o.order_no}` : 'Заказ'}>
       {!o ? <div style={{ textAlign: 'center', padding: 40 }}><Spinner dark /></div> : (
@@ -186,8 +194,9 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
             {o.courier_instructions && <div style={{ fontSize: 13, marginTop: 6 }}><b>Курьеру:</b> {o.courier_instructions}</div>}
             {o.note && <div style={{ fontSize: 13, marginTop: 6, background: '#FFF1E0', borderRadius: 12, padding: '8px 12px' }}><b>Комментарий:</b> {o.note}</div>}
             {o.scheduled_for && <div style={{ fontSize: 13, marginTop: 6, fontWeight: 800, color: '#C24D00' }}>Ко времени: {dateShort(o.scheduled_for)} {timeHM(o.scheduled_for)}</div>}
-            <div style={{ fontSize: 13, marginTop: 6, color: '#6B6258', fontWeight: 700 }}>Курьер: {courier ?? (o.mode === 'DELIVERY' ? 'не назначен' : '—')}</div>
           </Panel>
+
+          <CourierSection order={o} couriers={couriers} onChanged={() => { load(); onChanged(); }} />
 
           <Panel style={{ marginTop: 12 }}>
             <div style={{ fontWeight: 800, fontSize: 15 }}>Состав</div>
@@ -226,11 +235,8 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
                   {s === 'CANCELLED' ? 'Отменить заказ' : `→ ${STATUS_LABEL[s]}`}
                 </button>
               ))}
-              {o.status === 'COURIER_ASSIGNED' && (
-                <button className="btn" disabled={busy} onClick={release} style={{ minHeight: 44, padding: '0 16px', borderRadius: 14, fontWeight: 800, fontSize: 13, background: '#141210', color: '#fff' }}>Снять курьера</button>
-              )}
-              {o.status === 'READY' && o.mode === 'DELIVERY' && <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 700, alignSelf: 'center' }}>Ожидает, пока курьер примет заказ.</div>}
-              {!nextStatuses(o.status, o.mode).length && o.status !== 'COURIER_ASSIGNED' && <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 700 }}>Заказ завершён.</div>}
+              {o.status === 'READY' && o.mode === 'DELIVERY' && <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 700, alignSelf: 'center' }}>Курьер заберёт заказ и сам отметит выдачу.</div>}
+              {!nextStatuses(o.status, o.mode).length && <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 700 }}>Заказ завершён.</div>}
             </div>
           </Panel>
 
@@ -241,11 +247,11 @@ function OrderDrawer({ id, onClose, brName, onChanged }: { id: string; onClose: 
               <div key={h.id} style={{ display: 'flex', gap: 10, fontSize: 13, fontWeight: 700, marginTop: 10 }}>
                 <span style={{ color: '#6B6258', whiteSpace: 'nowrap' }}>{dateShort(h.created_at)} {timeHM(h.created_at)}</span>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: '#C24D00' }}>{h.actor_name ?? 'Система'} · {ACTOR_ROLE[h.actor_role ?? 'SYSTEM'] ?? h.actor_role}</div>
+                  <div style={{ color: '#C24D00' }}>{h.actor_role === 'SYSTEM' || !h.actor_role ? (h.actor_name ?? 'Система') : `${h.actor_name ?? 'Система'} · ${ACTOR_ROLE[h.actor_role] ?? h.actor_role}`}</div>
                   {h.event === 'STATUS' ? (
                     <div>{h.from_status ? STATUS_LABEL[h.from_status] : 'создан'} → <b>{h.to_status ? STATUS_LABEL[h.to_status] : '—'}</b>{h.note ? ` · ${h.note}` : ''}</div>
                   ) : (
-                    <div><b>{EVENT_LABEL[h.event] ?? h.event}</b>{h.note ? ` · ${h.note}` : ''}</div>
+                    <div><b>{eventText(h)}</b></div>
                   )}
                 </div>
               </div>
