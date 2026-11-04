@@ -6,7 +6,6 @@ import { BoltMark } from '@/components/customer/BoltMark';
 import { BrandFooter } from '@/components/customer/BrandFooter';
 import { ChampionHeader } from '@/components/customer/ChampionHeader';
 import { ComboBuilder } from '@/components/customer/ComboBuilder';
-import { HalalBadge } from '@/components/customer/HalalBadge';
 import { LastOrderCard } from '@/components/customer/LastOrderCard';
 import { PriceText } from '@/components/customer/PriceTag';
 import { useQuickAdd } from '@/components/customer/useQuickAdd';
@@ -85,7 +84,6 @@ export default function HomePage() {
 
         <div className="hm-hero-copy">
           <div className="hm-chips">
-            <HalalBadge />
             <span className="hm-status" style={{ visibility: chipReady ? 'visible' : 'hidden' }} role={chipReady ? 'status' : undefined}>
               <span className="live-dot" style={{ background: brk ? '#FFB27A' : '#4CD964' }} />
               {brk ? t('Перерыв до 08:00', 'Үзіліс 08:00-ге дейін') : t('Открыто', 'Ашық')}
@@ -172,8 +170,8 @@ export default function HomePage() {
         </section>
       )}
 
+      <ComboBuilder />
       <div className="hm-duo">
-        <ComboBuilder />
         <LastOrderCard />
       </div>
 

@@ -1,7 +1,7 @@
 'use client';
 import '@/styles/product.css';
-import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useRef, useState } from 'react';
 import { useCatalog } from '@/components/CatalogProvider';
 import { BoltMark } from '@/components/customer/BoltMark';
 import { ChampionHeader } from '@/components/customer/ChampionHeader';
@@ -15,10 +15,10 @@ import { UpsellRow } from '@/components/customer/UpsellRow';
 import { Heart, ProductImg, imageUrl, toast } from '@/components/ui';
 import { defaultMeat, useMounted, variantImage } from '@/features/catalog/hooks';
 import { parseNutrition } from '@/features/catalog/nutrition';
-import { unitPrice } from '@/features/cart/pricing';
+import { BEEF_PATTY_SLUG, CHEESE_EXTRA_SLUG, CHICKEN_PATTY_SLUG, pattyExtraFor, swapPattyExtra, unitPrice, type CartLine } from '@/features/cart/pricing';
 import { useLang } from '@/i18n/LangProvider';
 import { useApp } from '@/stores/app';
-import type { Meat } from '@/types/catalog';
+import type { Extra, Meat, Product } from '@/types/catalog';
 
 /** Brand-native meat labels are always bilingual (kk / ru) regardless of the UI language. */
 const MEAT_LABEL: Record<'chicken' | 'beef', { kk: string; ru: string }> = {
@@ -35,22 +35,79 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+type Translate = (ru: string, kk: string) => string;
+type TranslateDb = (ru: string | null | undefined, kk: string | null | undefined) => string;
+
+/**
+ * Burgers show exactly two add-on rows: the extra patty of the selected meat and the extra cheese (extras slug 'cheese-sauce', never a sauce).
+ * Other products with an extras group list their group extras as they are in the catalog.
+ */
+function extraRows(p: Product, meat: Meat, groupExtras: Extra[], isBurger: boolean, t: Translate, tx: TranslateDb) {
+  const rows: { extra: Extra; label: string; sub: string }[] = [];
+  if (!isBurger) {
+    for (const e of groupExtras) rows.push({ extra: e, label: tx(e.name, e.nameKk), sub: '' });
+    return rows;
+  }
+  const patty = pattyExtraFor(meat, groupExtras, p.extraGroupId);
+  if (patty) rows.push({ extra: patty, label: t('Дополнительная котлета', 'Қосымша котлет'), sub: meat === 'beef' ? t('говядина', 'сиыр еті') : t('курица', 'тауық еті') });
+  const cheese = groupExtras.find((e) => e.slug === CHEESE_EXTRA_SLUG);
+  if (cheese) rows.push({ extra: cheese, label: t('Дополнительный сыр', 'Қосымша ірімшік'), sub: '' });
+  return rows;
+}
+
+/** Edit mode: the extras of the cart line that can still be chosen here (the patty follows the line meat, the cheese). */
+function initialExtras(p: Product, line: CartLine, extras: Extra[]): string[] {
+  const group = extras.filter((e) => e.groupId === p.extraGroupId);
+  if (p.category !== 'burgers') return line.extraIds.filter((id) => group.some((e) => e.id === id));
+  const allowed = group.filter((e) => [CHEESE_EXTRA_SLUG, BEEF_PATTY_SLUG, CHICKEN_PATTY_SLUG].includes(e.slug)).map((e) => e.id);
+  return swapPattyExtra(line.extraIds.filter((id) => allowed.includes(id)), line.meat, group);
+}
+
 export default function ProductPage() {
+  return (
+    <Suspense>
+      <ProductRoute />
+    </Suspense>
+  );
+}
+
+/**
+ * Resolves the optional ?edit=<cart line key>. The line is read only after mount (the persisted store differs from the server render).
+ * ProductView is keyed by the edit key and takes the line as its initial state, so it keeps the edit mode after the save removes the line.
+ * An unknown key (or a line of another product) falls back to the normal «add» mode.
+ */
+function ProductRoute() {
   const { slug } = useParams<{ slug: string }>();
+  const editKey = useSearchParams().get('edit');
+  const { products } = useCatalog();
+  const p = products.find((x) => x.slug === slug);
+  const mounted = useMounted();
+  const line = useApp((s) => (editKey ? s.cart.find((c) => c.key === editKey) : undefined));
+  const initial = mounted && p && line && line.productId === p.id ? line : undefined;
+  return <ProductView key={`${slug}|${mounted ? 'm' : 's'}|${editKey ?? ''}`} product={p} initial={initial} />;
+}
+
+function ProductView({ product: p, initial }: { product: Product | undefined; initial: CartLine | undefined }) {
   const router = useRouter();
   const { t, tx, txList, lang } = useLang();
-  const { products, extras } = useCatalog();
-  const p = products.find((x) => x.slug === slug);
+  const { extras } = useCatalog();
   const add = useApp((s) => s.add);
+  const replace = useApp((s) => s.replace);
   const favs = useApp((s) => s.favs);
   const toggleFav = useApp((s) => s.toggleFav);
   const mounted = useMounted();
-  const [meat, setMeat] = useState<Meat | null>(null);
-  const [ex, setEx] = useState<string[]>([]);
-  const [qty, setQty] = useState(1);
+  const [edit] = useState(initial);
+  const [meat, setMeat] = useState<Meat | null>(initial?.meat ?? null);
+  const [ex, setEx] = useState<string[]>(() => (initial && p ? initialExtras(p, initial, extras) : []));
+  const [qty, setQty] = useState(initial?.qty ?? 1);
+  const saved = useRef(false); // a quick double tap must not replace the line twice (quantity would double)
   const [addedN, setAddedN] = useState<number | null>(null);
 
-  const back = () => (window.history.length > 1 ? router.back() : router.push('/menu'));
+  const back = () => {
+    if (edit) router.replace('/cart');
+    else if (window.history.length > 1) router.back();
+    else router.push('/menu');
+  };
 
   if (!p) {
     return (
@@ -65,6 +122,8 @@ export default function ProductPage() {
   const variant = p.variants.find((v) => v.meat === m);
   const groupExtras = extras.filter((e) => e.groupId === p.extraGroupId);
   const unit = unitPrice(p, m, ex, extras);
+  const isBurger = p.category === 'burgers';
+  const rows = extraRows(p, m, groupExtras, isBurger, t, tx);
   const fav = mounted && favs.includes(p.id);
   const isChampion = p.slug === 'champion';
   const name = tx(p.name, p.nameKk);
@@ -72,7 +131,6 @@ export default function ProductPage() {
   const ingredients = cleanList(txList(p.ingredients, p.ingredientsKk));
   const nutrition = variant ? parseNutrition(lang === 'kk' ? tx(variant.nutrition, variant.nutritionKk) : variant.nutrition) : null;
   const tagline = tx(p.tagline, p.taglineKk);
-  const isBurger = p.category === 'burgers';
   const variantLabelRu = variant?.label?.trim() ?? '';
   const variantLabelKk = variant?.labelKk?.trim() || variantLabelRu;
 
@@ -81,8 +139,15 @@ export default function ProductPage() {
     add({ productId: p.id, meat: m, qty, extraIds: ex });
     setAddedN(qty);
   };
-  // any change of the selection returns the bar to the «add» controls
-  const pickMeat = (mm: Meat) => { setMeat(mm); setAddedN(null); };
+  const saveEdit = () => {
+    if (unit == null || !edit || saved.current) return;
+    saved.current = true;
+    replace(edit.key, { productId: p.id, meat: m, qty, extraIds: ex });
+    toast(t('Изменения сохранены', 'Өзгерістер сақталды'));
+    router.replace('/cart');
+  };
+  // any change of the selection returns the bar to the «add» controls; the extra patty follows the meat
+  const pickMeat = (mm: Meat) => { setMeat(mm); setEx(swapPattyExtra(ex, mm, groupExtras)); setAddedN(null); };
   const toggleExtra = (id: string, on: boolean) => { setEx(on ? ex.filter((x) => x !== id) : [...ex, id]); setAddedN(null); };
   const changeQty = (n: number) => { setQty(n); setAddedN(null); };
 
@@ -119,6 +184,12 @@ export default function ProductPage() {
         </div>
 
         <div className="pd-info">
+          {edit && (
+            <div className="pd-edit" role="status">
+              <BoltMark size={18} />
+              <span>{t('Редактирование позиции из корзины', 'Себеттегі позицияны өзгерту')}</span>
+            </div>
+          )}
           <h1 className="disp pd-title">{name}</h1>
           {tagline && <div className="pd-tagline">{tagline}</div>}
           <div className="pd-chips"><HalalBadge dark /></div>
@@ -160,20 +231,22 @@ export default function ProductPage() {
             </>
           )}
 
-          {groupExtras.length > 0 && (
+          {rows.length > 0 && (
             <>
               <SectionTitle>{t('Дополнительно', 'Қосымша')}</SectionTitle>
               <div className="pd-extras">
-                {groupExtras.map((e) => {
+                {rows.map(({ extra: e, label, sub }) => {
                   const on = ex.includes(e.id);
-                  const exName = tx(e.name, e.nameKk);
                   return (
-                    <button key={e.id} type="button" role="checkbox" aria-checked={on} className="btn pd-ex" onClick={() => toggleExtra(e.id, on)}>
+                    <button key={e.slug} type="button" role="checkbox" aria-checked={on} className="btn pd-ex" onClick={() => toggleExtra(e.id, on)}>
                       <span className="pd-ex-tile">
                         {imageUrl(e.image) ? <ProductImg path={e.image} fit="cover" /> : <BoltMark size={30} className="pd-ex-bolt" />}
                       </span>
-                      <span className="pd-ex-name">{exName}</span>
-                      <PriceTag amount={e.price} prefix="+" size={14} color="#141210" />
+                      <span className="pd-ex-txt">
+                        <span className="pd-ex-name">{label}</span>
+                        {sub && <span className="pd-ex-sub">{sub}</span>}
+                        <PriceTag amount={e.price} prefix="+" size={14} color="#141210" />
+                      </span>
                       <span className="pd-ex-box" aria-hidden="true">{on ? '✓' : ''}</span>
                     </button>
                   );
@@ -186,7 +259,8 @@ export default function ProductPage() {
             total={unit == null ? null : unit * qty}
             qty={qty}
             onQty={changeQty}
-            onAdd={addToCart}
+            onAdd={edit ? saveEdit : addToCart}
+            editing={!!edit}
             added={addedN != null ? { n: addedN, name } : null}
             onContinue={back}
             onCart={() => router.push('/cart')}

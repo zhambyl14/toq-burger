@@ -55,7 +55,13 @@
 .pd-ex[aria-checked='true'] { border-color: #FF6A0A; background: #FFF1E0; }
 .pd-ex-tile { flex: none; width: 56px; height: 56px; border-radius: 14px; background: #FFE9D6; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
 .pd-ex-bolt { width: 30px; height: 30px; opacity: .9; }
-.pd-ex-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }
+.pd-ex-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.pd-ex-name { min-width: 0; font-weight: 700; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }
+.pd-ex-sub { font-size: 12px; font-weight: 700; color: #6B6258; line-height: 1.2; }
+
+/* cart line edit mode banner */
+.pd-edit { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 9px 14px; border-radius: 14px; background: #FFF1E0; border: 2px solid #FFD9B8; color: #C24D00; font-size: 13px; font-weight: 800; line-height: 1.25; }
+.pd-edit > span { min-width: 0; overflow-wrap: anywhere; }
 .pd-ex-box { flex: none; width: 24px; height: 24px; border-radius: 8px; background: #E5DACB; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; }
 .pd-ex[aria-checked='true'] .pd-ex-box { background: #FF6A0A; }
 

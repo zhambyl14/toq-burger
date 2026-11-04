@@ -3,7 +3,7 @@ import '@/styles/product.css';
 import { useCatalog } from '@/components/CatalogProvider';
 import { ProductImg, toast } from '@/components/ui';
 import { defaultMeat, useMounted, variantImage } from '@/features/catalog/hooks';
-import { lineKey } from '@/features/cart/pricing';
+import { lineKey, upsellProducts } from '@/features/cart/pricing';
 import { useLang } from '@/i18n/LangProvider';
 import { useApp } from '@/stores/app';
 import type { Product } from '@/types/catalog';
@@ -57,15 +57,12 @@ function UpsellCard({ item }: { item: Product }) {
   );
 }
 
-/** «Добавьте к заказу»: photo cards. Burgers get sides + sauces + drinks; other products get drinks + the other sides. */
+/** «Добавьте к заказу»: photo cards of fries, nuggets and the drinks (never sauces). Burgers get sides first, other products drinks first. */
 export function UpsellRow({ product }: { product: Product }) {
   const { products } = useCatalog();
   const { t } = useLang();
-  const others = products.filter((x) => x.id !== product.id);
-  const sides = others.filter((x) => x.category === 'sides');
-  const sauces = others.filter((x) => x.category === 'sauces');
-  const drinks = others.filter((x) => x.category === 'drinks');
-  const items = product.category === 'burgers' ? [...sides, ...sauces, ...drinks] : [...drinks, ...sides];
+  const { sides, drinks } = upsellProducts(products, product.id);
+  const items = product.category === 'burgers' ? [...sides, ...drinks] : [...drinks, ...sides];
   if (!items.length) return null;
 
   const title = t('Добавьте к заказу', 'Тапсырысқа қосыңыз');

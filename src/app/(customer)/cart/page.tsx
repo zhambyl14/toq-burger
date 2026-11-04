@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useCatalog } from '@/components/CatalogProvider';
 import { ProductImg, Spinner, toast } from '@/components/ui';
 import { defaultMeat, useMounted, variantImage } from '@/features/catalog/hooks';
-import { cartTotals, unitPrice } from '@/features/cart/pricing';
+import { cartTotals, lineKey, unitPrice, upsellProducts } from '@/features/cart/pricing';
 import { useQuote } from '@/features/branches/useQuote';
 import { useLang } from '@/i18n/LangProvider';
 import { useApp } from '@/stores/app';
@@ -14,8 +14,40 @@ import { BoltMark } from '@/components/customer/BoltMark';
 import { PricePill } from '@/components/customer/PricePill';
 import { PriceTag } from '@/components/customer/PriceTag';
 import { sb, supabaseConfigured } from '@/lib/supabase/client';
-import type { Meat } from '@/types/catalog';
+import type { Meat, Product } from '@/types/catalog';
 import '@/styles/flow.css';
+
+const MAX_QTY = 50;
+
+/** «Добавить к заказу» card: photo, name, price and a «+» / «− n +» control bound to the cart line of the item. */
+function UpsellCard({ p }: { p: Product }) {
+  const { t, tx } = useLang();
+  const meat = defaultMeat(p);
+  const price = p.variants.find((v) => v.meat === meat)?.price ?? null;
+  const key = lineKey(p.id, meat, []);
+  const n = useApp((s) => s.cart.find((c) => c.key === key)?.qty ?? 0);
+  const add = useApp((s) => s.add);
+  const changeQty = useApp((s) => s.qty);
+  const nm = tx(p.name, p.nameKk);
+  if (price == null) return null;
+  return (
+    <div className="fl-up__card">
+      <div className="fl-up__img"><ProductImg path={variantImage(p, meat)} alt={nm} fit="contain" /></div>
+      <div className="fl-up__name">{nm}</div>
+      <div className="fl-up__price"><PriceTag amount={price} tone="ink" size={14} /></div>
+      {n > 0 ? (
+        <div className="fl-up__step">
+          <button type="button" className="btn" aria-label={`${t('Меньше', 'Азайту')}: ${nm}`} onClick={() => changeQty(key, -1)}>−</button>
+          <span className="fl-up__n" aria-live="polite">{n}</span>
+          <button type="button" className="btn fl-up__plus" aria-label={`${t('Больше', 'Көбейту')}: ${nm}`} disabled={n >= MAX_QTY} onClick={() => changeQty(key, 1)}>+</button>
+        </div>
+      ) : (
+        <button type="button" className="btn fl-up__add" aria-label={`${t('Добавить', 'Қосу')}: ${nm}`}
+          onClick={() => { add({ productId: p.id, meat, qty: 1, extraIds: [] }); toast(t('Добавлено: ', 'Қосылды: ') + nm); }}>+</button>
+      )}
+    </div>
+  );
+}
 
 export default function CartPage() {
   const router = useRouter();
@@ -45,12 +77,11 @@ export default function CartPage() {
     return () => { alive = false; };
   }, [promoCode, subtotal, setApp]);
 
+  // fries, nuggets and the priced drinks (never sauces); cards keep their place while the quantity changes
   const upsell = useMemo(() => {
-    const inCart = new Set(s.cart.map((l) => l.productId));
-    return products
-      .filter((p) => (p.category === 'sides' || p.category === 'sauces') && !inCart.has(p.id) && p.variants.some((v) => v.price != null))
-      .slice(0, 6);
-  }, [products, s.cart]);
+    const { sides, drinks } = upsellProducts(products);
+    return [...sides, ...drinks].filter((p) => p.variants.some((v) => v.price != null));
+  }, [products]);
 
   const meatL = (m: Meat) => (m === 'beef' ? t('Говядина', 'Сиыр еті') : m === 'chicken' ? t('Курица', 'Тауық еті') : '');
 
@@ -141,6 +172,7 @@ export default function CartPage() {
                   </div>
                 );
               }
+              const editHref = `/product/${p.slug}?edit=${encodeURIComponent(l.key)}`;
               const isB = p.category === 'burgers';
               const other = l.meat === 'beef' ? 'chicken' : 'beef';
               const canSwitch = isB && p.variants.some((v) => v.meat === other && v.price != null);
@@ -148,15 +180,15 @@ export default function CartPage() {
               const sub = [isB ? meatL(l.meat) : tx(p.tagline, p.taglineKk)].concat(exNames.length ? ['+ ' + exNames.join(', ')] : []).filter(Boolean).join(' · ');
               return (
                 <div key={l.key} className="fl-line">
-                  <div className="fl-line__img" style={{ background: p.slug === 'classic' ? '#FF6A0A' : '#FFF1E0' }}>
+                  <Link href={editHref} className="fl-line__img" tabIndex={-1} aria-hidden="true" style={{ background: p.slug === 'classic' ? '#FF6A0A' : '#FFF1E0' }}>
                     <ProductImg path={variantImage(p, l.meat)} fit={p.slug === 'classic' ? 'cover' : 'contain'} />
-                  </div>
+                  </Link>
                   <div className="fl-line__info">
-                    <div className="fl-line__name">{tx(p.name, p.nameKk)}</div>
+                    <Link href={editHref} className="fl-line__name fl-line__link">{tx(p.name, p.nameKk)}</Link>
                     <div className="fl-line__sub">{sub}</div>
                     {u == null && <div style={{ fontSize: 12, color: '#B3261E', fontWeight: 800, marginTop: 4 }}>{t('Сейчас недоступно — удалите позицию', 'Қазір қолжетімсіз — позицияны жойыңыз')}</div>}
                     {canSwitch && (
-                      <button className="btn" onClick={() => { s.switchMeat(l.key, other); toast(t('Мясо изменено: ', 'Ет өзгертілді: ') + meatL(other)); }}
+                      <button className="btn" onClick={() => { s.switchMeat(l.key, other, extras); toast(t('Мясо изменено: ', 'Ет өзгертілді: ') + meatL(other)); }}
                         style={{ marginTop: 6, minHeight: 32, padding: '0 12px', borderRadius: 16, background: '#FFF1E0', color: '#C24D00', fontWeight: 800, fontSize: 12 }}>{t('Сменить на: ', 'Ауыстыру: ')}{meatL(other)}</button>
                     )}
                   </div>
@@ -176,22 +208,7 @@ export default function CartPage() {
             <section aria-label={t('Добавить к заказу', 'Тапсырысқа қосу')} style={{ marginTop: 22 }}>
               <h2 className="disp fl-h">{t('Добавить к заказу', 'Тапсырысқа қосу')}</h2>
               <div className="fl-up">
-                {upsell.map((p) => {
-                  const meat = defaultMeat(p);
-                  const u = unitPrice(p, meat, [], extras);
-                  const nm = tx(p.name, p.nameKk);
-                  return (
-                    <div key={p.id} className="fl-up__card">
-                      <div className="fl-up__img"><ProductImg path={variantImage(p, meat)} fit="contain" /></div>
-                      <div style={{ fontWeight: 800, fontSize: 13, marginTop: 8, lineHeight: 1.2, flex: 1 }}>{nm}</div>
-                      <button className="btn" disabled={u == null} aria-label={`${t('Добавить', 'Қосу')}: ${nm}`}
-                        onClick={() => { s.add({ productId: p.id, meat, qty: 1, extraIds: [] }); toast(t('Добавлено: ', 'Қосылды: ') + nm); }}
-                        style={{ marginTop: 8, minHeight: 44, borderRadius: 14, background: '#FF6A0A', color: '#fff', fontWeight: 800, fontSize: 13 }}>
-                        {u != null ? <PriceTag amount={u} prefix="+ " tone="ink" size={13} color="#fff" /> : '+ —'}
-                      </button>
-                    </div>
-                  );
-                })}
+                {upsell.map((p) => <UpsellCard key={p.id} p={p} />)}
               </div>
             </section>
           )}

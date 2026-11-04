@@ -12,9 +12,10 @@ const MAX_QTY = 50;
  * Mobile: fixed bottom bar (.sticky-bar). Desktop: the same markup sits in the info column in flow, as an orange-outlined card.
  * `total` is unit price × qty (null => the price is not set yet, nothing can be bought).
  * After adding, `added` switches the block to the success state (continue / go to cart).
+ * `editing` (cart line edit mode): the main button reads «Сохранить изменения · total» and `onAdd` saves the line.
  */
 export function PurchaseBar({
-  total, qty, onQty, onAdd, added, onContinue, onCart,
+  total, qty, onQty, onAdd, added, onContinue, onCart, editing = false,
 }: {
   total: number | null;
   qty: number;
@@ -23,6 +24,7 @@ export function PurchaseBar({
   added: { n: number; name: string } | null;
   onContinue: () => void;
   onCart: () => void;
+  editing?: boolean;
 }) {
   const { t } = useLang();
 
@@ -71,7 +73,9 @@ export function PurchaseBar({
       {unavailable ? (
         <button type="button" className="btn pd-soon" disabled>{t('Скоро', 'Жақында')}</button>
       ) : (
-        <button type="button" className="btn primary pd-add" onClick={onAdd}>{t('В корзину', 'Себетке қосу')}</button>
+        <button type="button" className="btn primary pd-add" onClick={onAdd}>
+          {editing ? <>{t('Сохранить изменения', 'Өзгерістерді сақтау')} · {fmtNumber(total)} ₸</> : t('В корзину', 'Себетке қосу')}
+        </button>
       )}
     </div>
   );

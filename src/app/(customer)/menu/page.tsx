@@ -30,17 +30,25 @@ function Menu() {
   const { t, tx } = useLang();
   const quickAdd = useQuickAdd();
   const initial = sp.get('cat');
-  const [cat, setCat] = useState(CAT_IDS.includes(initial ?? '') && initial ? initial : 'all');
+  const [catSel, setCat] = useState(CAT_IDS.includes(initial ?? '') && initial ? initial : 'all');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   // search matches both the Russian and the Kazakh name
   const match = (p: Product) => !query || p.name.toLowerCase().includes(query) || (p.nameKk ?? '').toLowerCase().includes(query);
-  const showAll = !!query || cat === 'all';
 
-  const cats: [string, string][] = [
+  const allCats: [string, string][] = [
     ['all', t('Всё меню', 'Бүкіл мәзір')], ['beef', t('С говядиной', 'Сиыр етімен')], ['chicken', t('С курицей', 'Тауық етімен')],
     ['sides', t('Картофель и закуски', 'Картоп және тіскебасарлар')], ['sauces', t('Соусы', 'Тұздықтар')], ['drinks', t('Напитки', 'Сусындар')], ['combo', t('Комбо', 'Комбо')],
   ];
+  // a category tab exists only while it has visible products («Соусы» disappears when the catalog has none); «Комбо» is always there
+  const hasCat = (id: string): boolean => {
+    if (id === 'all' || id === 'combo') return true;
+    if (id === 'beef' || id === 'chicken') return products.some((p) => p.category === 'burgers' && p.variants.some((v) => v.meat === id));
+    return products.some((p) => p.category === id);
+  };
+  const cats = allCats.filter(([id]) => hasCat(id));
+  const cat = cats.some(([id]) => id === catSel) ? catSel : 'all';
+  const showAll = !!query || cat === 'all';
 
   // search spans every category; otherwise filter by the selected chip
   const burgers = products.filter((p) => p.category === 'burgers' && match(p) && (showAll

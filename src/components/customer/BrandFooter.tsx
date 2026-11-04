@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useLang } from '@/i18n/LangProvider';
 import type { Branch } from '@/types/catalog';
+import { CertBadge } from './CertBadge';
 import '@/styles/home.css';
 
 /**
@@ -20,7 +21,7 @@ export function BrandFooter({ branches }: { branches: Pick<Branch, 'id' | 'short
         <div className="bf-body">
           <span aria-hidden="true" className="hm-bolt bf-bolt bf-bolt--a" />
           <span aria-hidden="true" className="hm-bolt bf-bolt bf-bolt--b" />
-          <div className="bf-halal">100% ХАЛАЛ</div>
+          <CertBadge />
           <div className="bf-info">
             {branches.length ? branches.map((b) => b.short_name).join(' · ') : 'Самал-3 · Радостовца · Жарокова · Толе би'}
             <br />{t('Ежедневно 00:00–24:00 · перерыв 06:00–08:00', 'Күн сайын 00:00–24:00 · үзіліс 06:00–08:00')}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addLine, cartTotals, changeQty, lineKey, switchMeat, unitPrice } from '@/features/cart/pricing';
+import { addLine, cartTotals, changeQty, lineKey, pattyExtraFor, replaceLine, switchMeat, swapPattyExtra, unitPrice, upsellProducts } from '@/features/cart/pricing';
 import { haversineKm, inServiceArea, isBranchOpen, pickDeliveryBranch, type Ring } from '@/features/branches/assign';
 import almatyRings from './almaty-rings.json';
 import { normalizeKzPhone, internalEmailFor, maskPhone } from '@/lib/phone';
@@ -13,7 +13,13 @@ const mustard: Product = {
   ],
 };
 const fanta: Product = { ...mustard, id: 'f', slug: 'fanta', category: 'drinks', variants: [{ id: 'f1', meat: 'one', label: '0,5', price: null, nutrition: null, image: null }] };
-const extras: Extra[] = [{ id: 'cs', slug: 'cheese-sauce', name: 'Сырный соус', price: 200, groupId: 'g' }, { id: 'bp', slug: 'beef-patty', name: 'Котлета', price: 790, groupId: 'g' }];
+const extras: Extra[] = [
+  { id: 'cs', slug: 'cheese-sauce', name: 'Дополнительный сыр', price: 200, groupId: 'g' },
+  { id: 'bp', slug: 'beef-patty', name: 'Дополнительная котлета (говядина)', price: 790, groupId: 'g' },
+  { id: 'cp', slug: 'chicken-patty', name: 'Дополнительная котлета (курица)', price: 690, groupId: 'g' },
+];
+
+const prod = (id: string, category: string, slug = id): Product => ({ ...mustard, id, slug, category });
 
 describe('pricing', () => {
   it('chicken/beef price differs', () => {
@@ -45,6 +51,60 @@ describe('pricing', () => {
     expect(c).toHaveLength(1);
     expect(c[0].qty).toBe(2);
     expect(changeQty(c, c[0].key, -2)).toHaveLength(0);
+  });
+  it('extra patty follows the meat, other extras stay', () => {
+    expect(swapPattyExtra(['bp', 'cs'], 'chicken', extras).sort()).toEqual(['cp', 'cs']);
+    expect(swapPattyExtra(['cp'], 'beef', extras)).toEqual(['bp']);
+    expect(swapPattyExtra(['cs'], 'chicken', extras)).toEqual(['cs']);
+    expect(swapPattyExtra([], 'beef', extras)).toEqual([]);
+    expect(swapPattyExtra(['bp'], 'beef', extras)).toEqual(['bp']);
+  });
+  it('patty swap keeps the selection when the catalog has no patty of the new meat', () => {
+    const onlyBeef = extras.filter((e) => e.id !== 'cp');
+    expect(swapPattyExtra(['bp'], 'chicken', onlyBeef)).toEqual(['bp']);
+    expect(pattyExtraFor('chicken', onlyBeef)).toBeUndefined();
+    expect(pattyExtraFor('one', extras)).toBeUndefined();
+    expect(pattyExtraFor('chicken', extras, 'other')).toBeUndefined();
+    expect(pattyExtraFor('chicken', extras, 'g')?.id).toBe('cp');
+  });
+  it('switching meat swaps the patty extra and reprices the line', () => {
+    const c = addLine([], { productId: 'm', meat: 'beef', qty: 2, extraIds: ['bp', 'cs'] });
+    const sw = switchMeat(c, c[0].key, 'chicken', extras);
+    expect(sw).toHaveLength(1);
+    expect(sw[0].meat).toBe('chicken');
+    expect([...sw[0].extraIds].sort()).toEqual(['cp', 'cs']);
+    expect(sw[0].key).toBe(lineKey('m', 'chicken', ['cp', 'cs']));
+    expect(unitPrice(mustard, 'chicken', sw[0].extraIds, extras)).toBe(1900 + 690 + 200);
+    // without the catalog the extras are untouched (legacy call)
+    expect(switchMeat(c, c[0].key, 'chicken')[0].extraIds).toEqual(['bp', 'cs']);
+  });
+  it('switching meat merges into an existing line of the other meat', () => {
+    let c = addLine([], { productId: 'm', meat: 'beef', qty: 1, extraIds: ['bp'] });
+    c = addLine(c, { productId: 'm', meat: 'chicken', qty: 2, extraIds: ['cp'] });
+    const sw = switchMeat(c, c[0].key, 'chicken', extras);
+    expect(sw).toHaveLength(1);
+    expect(sw[0].qty).toBe(3);
+  });
+  it('replaceLine swaps the old configuration for the new one and merges equal lines', () => {
+    let c = addLine([], { productId: 'm', meat: 'beef', qty: 1, extraIds: [] });
+    c = addLine(c, { productId: 'm', meat: 'chicken', qty: 2, extraIds: [] });
+    const [beef, chicken] = c;
+    const edited = replaceLine(c, beef.key, { productId: 'm', meat: 'beef', qty: 3, extraIds: ['cs'] });
+    expect(edited).toHaveLength(2);
+    expect(edited.find((l) => l.key === beef.key)).toBeUndefined();
+    expect(edited.find((l) => l.key === lineKey('m', 'beef', ['cs']))?.qty).toBe(3);
+    const merged = replaceLine(c, beef.key, { productId: 'm', meat: 'chicken', qty: 1, extraIds: [] });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].key).toBe(chicken.key);
+    expect(merged[0].qty).toBe(3);
+    expect(replaceLine(c, 'unknown', { productId: 'm', meat: 'beef', qty: 1, extraIds: [] })).toHaveLength(2);
+  });
+  it('upsell offers only sides and drinks, never sauces', () => {
+    const list = [prod('b', 'burgers'), prod('fr', 'sides'), prod('ng', 'sides'), prod('cs1', 'sauces', 'cheese-sauce'), prod('co', 'drinks'), prod('cb', 'combo')];
+    const u = upsellProducts(list);
+    expect(u.sides.map((p) => p.id)).toEqual(['fr', 'ng']);
+    expect(u.drinks.map((p) => p.id)).toEqual(['co']);
+    expect(upsellProducts(list, 'fr').sides.map((p) => p.id)).toEqual(['ng']);
   });
   it('totals with delivery fee and unavailable lines', () => {
     const c = addLine(addLine([], { productId: 'm', meat: 'chicken', qty: 2, extraIds: ['cs'] }), { productId: 'f', meat: 'one', qty: 1, extraIds: [] });

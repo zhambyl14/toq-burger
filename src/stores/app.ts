@@ -1,8 +1,8 @@
 'use client';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { addLine, changeQty, switchMeat, type CartLine } from '@/features/cart/pricing';
-import type { Meat } from '@/types/catalog';
+import { addLine, changeQty, replaceLine, switchMeat, type CartLine } from '@/features/cart/pricing';
+import type { Extra, Meat } from '@/types/catalog';
 
 export interface DeliveryAddress {
   lat: number;
@@ -32,7 +32,10 @@ interface AppState {
   add: (item: { productId: string; meat: Meat; qty: number; extraIds: string[] }) => void;
   qty: (key: string, d: number) => void;
   remove: (key: string) => void;
-  switchMeat: (key: string, meat: Meat) => void;
+  /** `extras` (the catalog) lets the extra patty follow the new meat. */
+  switchMeat: (key: string, meat: Meat, extras?: Extra[]) => void;
+  /** Cart «edit»: replaces the line `oldKey` with a new configuration. */
+  replace: (oldKey: string, item: { productId: string; meat: Meat; qty: number; extraIds: string[] }) => void;
   clearCart: () => void;
   set: (p: Partial<Pick<AppState, 'note' | 'promo' | 'address' | 'mode' | 'pickupBranchId' | 'favs' | 'pendingOrderKey'>>) => void;
   setDetail: (k: keyof AddressDetails, v: string) => void;
@@ -55,7 +58,8 @@ export const useApp = create<AppState>()(
       add: (item) => set((s) => ({ cart: addLine(s.cart, item), bump: s.bump + 1, pendingOrderKey: null })),
       qty: (key, d) => set((s) => ({ cart: changeQty(s.cart, key, d), pendingOrderKey: null })),
       remove: (key) => set((s) => ({ cart: s.cart.filter((c) => c.key !== key), pendingOrderKey: null })),
-      switchMeat: (key, meat) => set((s) => ({ cart: switchMeat(s.cart, key, meat), pendingOrderKey: null })),
+      switchMeat: (key, meat, extras) => set((s) => ({ cart: switchMeat(s.cart, key, meat, extras), pendingOrderKey: null })),
+      replace: (oldKey, item) => set((s) => ({ cart: replaceLine(s.cart, oldKey, item), pendingOrderKey: null })),
       clearCart: () => set({ cart: [], note: '', promo: '', pendingOrderKey: null }),
       set: (p) => set(p),
       setDetail: (k, v) => set((s) => ({ details: { ...s.details, [k]: v } })),
