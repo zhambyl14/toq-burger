@@ -6,7 +6,8 @@ const SR = 48000;
 const ctx = {};
 new Function("ctx", fs.readFileSync("vo/words.js", "utf8") + fs.readFileSync("timeline.js", "utf8").replace("var TL =", "ctx.TL =") + "; ctx.VO_DUR = VO_DUR;")(ctx);
 const TL = ctx.TL;
-const DUR = TL.DURATION, N = Math.round(DUR * SR);
+const DUR = TL.DURATION, START = TL.START, END = TL.END, N = Math.round(DUR * SR);
+const A9 = TL.byId.s9.a, A10 = TL.byId.s10.a;
 
 const buf = () => [new Float32Array(N), new Float32Array(N)];
 const MUS = buf(), SFX = buf(), VO = new Float32Array(N), REV = buf();
@@ -19,9 +20,10 @@ const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 
 // Adds a mono generator f(i, tLocal) into a stereo bus with pan and optional reverb send.
 function add(bus, t0, dur, f, { gain = 1, pan = 0, send = 0 } = {}) {
-  const s0 = Math.max(0, Math.round(t0 * SR)), n = Math.min(N - s0, Math.round(dur * SR));
+  // t0 is story time; sample 0 of the mix is TL.START
+  const s0 = Math.round((t0 - START) * SR), n = Math.min(N - s0, Math.round(dur * SR));
   const gl = gain * Math.cos((pan + 1) * Math.PI / 4), gr = gain * Math.sin((pan + 1) * Math.PI / 4);
-  for (let i = 0; i < n; i++) {
+  for (let i = Math.max(0, -s0); i < n; i++) {
     const v = f(i, i / SR);
     bus[0][s0 + i] += v * gl; bus[1][s0 + i] += v * gr;
     if (send) { REV[0][s0 + i] += v * gl * send; REV[1][s0 + i] += v * gr * send; }
@@ -98,13 +100,21 @@ const CH = [
   { k: [51, 55, 58, 60, 67], b: 39 }, // Eb6
 ];
 const BEAT = .5, BAR = 2;
-const sect = (t) => t < 6.5 ? "intro" : t < 15.25 ? "tension" : t < 16 ? "lift" : t < 76 ? "groove" : t < 87.5 ? "break" : t < 96 ? "final" : "end";
-for (let bar = 0; bar * BAR < 96; bar++) {
-  const t = bar * BAR, ch = CH[bar % 4];
+const FINAL_HIT = END - 3.6;
+const sect = (t) => t < -0.5 ? "hook" : t < 0 ? "gap" : t < 6.5 ? "intro" : t < 15.25 ? "tension" : t < 16 ? "lift" : t < 76 ? "groove" : t < A9 - .5 ? "break" : t < FINAL_HIT ? "final" : "end";
+for (let bar = Math.floor(START / BAR); bar * BAR < FINAL_HIT; bar++) {
+  const t = bar * BAR, ch = CH[((bar % 4) + 4) % 4];
   const s = sect(t), s2 = sect(t + 1);
-  const full = s === "groove" || s === "final";
+  const full = s === "groove" || s === "final" || s === "hook";
+  if (s === "gap") continue;
   // keys: stabs on 1, 2&, 4 (only 1 in the intro)
   if (s === "intro") keys(t, ch.k, { gain: .09, len: 1.8, bright: .5 });
+  else if (s === "hook") {
+    keys(t, ch.k, { gain: .1, len: .9, bright: 1.2 });
+    keys(t + 1.5 * BEAT, ch.k, { gain: .07, len: .3 });
+    keys(t + 3 * BEAT, ch.k, { gain: .07, len: .3 });
+    keys(t + 3.5 * BEAT, ch.k.map((m) => m + 12).slice(0, 3), { gain: .04, len: .2 });
+  }
   else if (s !== "lift") {
     keys(t, ch.k, { gain: full ? .11 : .09, len: .9 });
     keys(t + 1.5 * BEAT, ch.k, { gain: full ? .07 : .05, len: .3 });
@@ -112,7 +122,7 @@ for (let bar = 0; bar * BAR < 96; bar++) {
   }
   if (s === "intro" || s === "break" || s === "tension") pad(t, ch.k.map((m) => m - 12).slice(0, 3), BAR, { gain: s === "break" ? .06 : .045, cutoff: s === "intro" ? 600 : 1000 });
   // bass
-  if (s !== "intro" && s !== "lift") {
+  if (s !== "intro" && s !== "lift" && t >= START + 2) {
     const r = ch.b;
     [[0, .35], [.75, .2], [1.5, .3], [2.5, .2], [3.25, .2]].forEach(([b, l], k) => {
       if (s === "tension" && k % 2) return;
@@ -124,6 +134,15 @@ for (let bar = 0; bar * BAR < 96; bar++) {
     const tb = t + b * BEAT;
     if (tb >= 15.4 && tb < 16) continue;
     const sb = sect(tb);
+    if (sb === "gap" || sb === "end") continue;
+    if (sb === "hook") {
+      if (tb < START + .4) continue;
+      if (b === 0 || b === 2) kick(tb, tb < START + 2 ? .3 : .5);
+      if (b === 1 || b === 3) clap(tb, .18);
+      hat(tb, .045); hat(tb + .27, .035);
+      for (let q = 0; q < 4; q++) shaker(tb + q * .125, q % 2 ? .015 : .028);
+      continue;
+    }
     if (sb === "intro") { hat(tb, .03); continue; }
     if (sb === "tension") { if (b === 0) kick(tb, .45); if (b === 2) clap(tb, .16); hat(tb, .04); hat(tb + .25, .025); continue; }
     if (sb === "break") { if (b === 0) kick(tb, .35); hat(tb + .25, .03); continue; }
@@ -139,11 +158,14 @@ for (let bar = 0; bar * BAR < 96; bar++) {
   }
 }
 riser(13.4, 2.0, .1);
-riser(85.4, 2.1, .1);
+riser(A9 - 2.1, 2.1, .1);
+riser(A10 - 1.6, 1.4, .07);
 // final chord ring-out + last hit
-keys(96, [44, 56, 60, 63, 67, 72], { gain: .16, len: 3.6 });
-pad(96, [44, 51, 56], 3.2, { gain: .05, cutoff: 1400 });
-kick(96, .5); bass(96, 44, 2.6, .3);
+keys(FINAL_HIT, [44, 56, 60, 63, 67, 72], { gain: .16, len: 3.4 });
+pad(FINAL_HIT, [44, 51, 56], 3.2, { gain: .05, cutoff: 1400 });
+kick(FINAL_HIT, .5); bass(FINAL_HIT, 44, 2.6, .3);
+// the "write to me" hit in the outro lands on its own accent
+kick(TL.C.write, .45); clap(TL.C.write, .2);
 
 // ---------------- SFX ----------------
 const S = {
@@ -186,7 +208,7 @@ for (let i = 0; i < 4; i++) {
 for (const s of TL.SCENES) {
   const raw = execFileSync("ffmpeg", ["-v", "error", "-i", `vo/${s.id}.mp3`, "-f", "f32le", "-ac", "1", "-ar", String(SR), "-"], { maxBuffer: 1 << 28 });
   const v = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
-  const s0 = Math.round(s.vo * SR);
+  const s0 = Math.round((s.vo - START) * SR);
   for (let i = 0; i < v.length && s0 + i < N; i++) VO[s0 + i] += v[i];
 }
 // normalise voice peaks to -3 dBFS before mixing
@@ -220,7 +242,7 @@ let peak = 0;
   console.log("voice vs bed (dB):", (10 * Math.log10(v / m)).toFixed(1));
 }
 for (let i = 0; i < N; i++) {
-  const t = i / SR, fadeEnd = t > 98.6 ? Math.max(0, (100 - t) / 1.4) : 1;
+  const t = START + i / SR, fadeEnd = t > END - 1.4 ? Math.max(0, (END - t) / 1.4) : 1;
   for (let ch = 0; ch < 2; ch++) {
     const m = (MUS[ch][i] + RV[ch][i] * .9) * .55 * duck[i];
     let x = (m + SFX[ch][i] * .55 * (.55 + .45 * duck[i]) + VO[i] * .95) * fadeEnd;
