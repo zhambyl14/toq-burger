@@ -4,13 +4,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+// Behind an HTTPS proxy (cloud sandbox) the websocket needs an explicit agent.
+const agent = process.env.HTTPS_PROXY ? new (await import("https-proxy-agent")).HttpsProxyAgent(process.env.HTTPS_PROXY) : undefined;
+
 const script = JSON.parse(fs.readFileSync("script.json", "utf8"));
-const voice = process.argv[2] || script.voice;
+const voice = process.env.VOICE || script.voice;
+const only = process.argv[2] ? process.argv[2].split(",") : null;   // e.g. node tts.mjs s0,s4,s8,s10
 fs.mkdirSync("vo", { recursive: true });
 
-const durations = {};
+const durations = fs.existsSync("vo/durations.json") ? JSON.parse(fs.readFileSync("vo/durations.json", "utf8")) : {};
 for (const line of script.lines) {
-  const tts = new MsEdgeTTS();
+  if (only && !only.includes(line.id)) continue;
+  const tts = new MsEdgeTTS({ agent });
   await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3, { wordBoundaryEnabled: true });
   const dir = fs.mkdtempSync(path.join("vo", "tmp-"));
   const { audioFilePath, metadataFilePath } = await tts.toFile(dir, line.tts, { rate: script.rate });

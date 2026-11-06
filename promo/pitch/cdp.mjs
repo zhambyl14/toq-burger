@@ -1,17 +1,18 @@
-// Minimal headless Edge driver over the Chrome DevTools Protocol (no dependencies).
+// Minimal headless Chromium/Edge driver over the Chrome DevTools Protocol (no dependencies).
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+const EDGE = process.env.CHROME ||
+  (process.platform === "win32" ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" : "/opt/pw-browsers/chromium");
 
 export async function launch({ width, height, scale = 1, port = 9333 }) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "edge-cdp-"));
   const proc = spawn(EDGE, [
-    "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+    "--headless=new", "--no-sandbox", "--disable-gpu-sandbox", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--no-first-run", "--hide-scrollbars", "--force-color-profile=srgb",
-    "--disable-features=msEdgeSidebarV2", "--mute-audio", "about:blank",
+    "--disable-features=msEdgeSidebarV2", "--mute-audio", "--allow-file-access-from-files", "about:blank",
   ], { stdio: "ignore" });
 
   let target;
