@@ -20,8 +20,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: kk ? 'TOK BURGER — Алматыда бургер жеткізу' : 'TOK BURGER — доставка бургеров в Алматы',
     description: kk
-      ? 'Қарның ашты — біздің бургер. TOK BURGER-дің Алматыдағы 4 филиалынан жеткізу.'
-      : 'Твой голод. Наш бургер. Доставка из 4 филиалов TOK BURGER в Алматы.',
+      ? 'Қарның ашты — біздің бургер. TOK BURGER-дің Алматыдағы 5 филиалынан жеткізу.'
+      : 'Твой голод. Наш бургер. Доставка из 5 филиалов TOK BURGER в Алматы.',
     applicationName: 'TOK BURGER',
   };
 }
