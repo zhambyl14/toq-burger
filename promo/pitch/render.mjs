@@ -19,18 +19,34 @@ async function worker(w, a, b) {
     "-vf", "scale=in_range=pc:out_range=tv:out_color_matrix=bt709,format=yuv420p",
     "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-pix_fmt", "yuv420p", "-r", String(FPS),
     "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", part], { stdio: ["pipe", "inherit", "inherit"] });
-  const br = await launch({ width: TL.W, height: TL.H, port: 9400 + w });
-  await br.goto(pathToFileURL(path.resolve("index.html")).href);
-  await br.evaluate("window.ready");
+  // headless Chromium occasionally stalls; every step has a deadline and the browser is relaunched on a stall
+  const within = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error("stall")), ms))]);
+  let br = null, gen = 0;
+  const open = async () => {
+    br = await within(launch({ width: TL.W, height: TL.H, port: 9400 + w + 10 * (++gen) }), 30000);
+    await within(br.goto(pathToFileURL(path.resolve("index.html")).href), 30000);
+    await within(br.evaluate("window.ready"), 90000);
+  };
   const t0 = Date.now();
   for (let f = a; f < b; f++) {
-    await br.evaluate(`renderAt(${START + f / FPS})`);
-    await br.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))");
-    const jpg = await br.shot("jpeg", 95);
+    let jpg = null;
+    for (let tries = 0; !jpg; tries++) {
+      try {
+        if (!br) await open();
+        await within(br.evaluate(`renderAt(${START + f / FPS})`), 15000);
+        await within(br.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))"), 15000);
+        jpg = await within(br.shot("jpeg", 95), 15000);
+      } catch (e) {
+        console.log(`w${w} frame ${f}: ${e.message}, relaunching (${tries + 1})`);
+        try { br && br.close(); } catch {}
+        br = null;
+        if (tries > 5) throw e;
+      }
+    }
     if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once("drain", r));
     if ((f - a) % 300 === 0) console.log(`w${w} frame ${f}/${b} ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   }
-  br.close();
+  if (br) br.close();
   ff.stdin.end();
   await new Promise((r) => ff.on("close", r));
   return part;
