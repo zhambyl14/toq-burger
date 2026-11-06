@@ -2,7 +2,7 @@
 
 115 секундтық, **1080×1920, 60 fps**, бумажный коллаж стиліндегі вертикал видео. Дауысы қазақша (Microsoft `kk-KZ-DauletNeural`).
 
-**Дайын видео:** [`video/toq-burger-pitch-9x16.mp4`](video/toq-burger-pitch-9x16.mp4) (H.264 + AAC, Git LFS арқылы сақталған).
+**Дайын видео:** [`video/toq-burger-pitch-9x16.mp4`](video/toq-burger-pitch-9x16.mp4) (~60 МБ жеңіл нұсқа, H.264 + AAC, репода тікелей сақталған).
 Толық сапалы мастер `render.mjs` арқылы `out/` ішіне жасалады және репоға салынбайды.
 
 ## Құрылымы
