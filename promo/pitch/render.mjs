@@ -44,7 +44,7 @@ async function worker(w, a, b) {
       }
     }
     if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once("drain", r));
-    if ((f - a) % 300 === 0) console.log(`w${w} frame ${f}/${b} ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+    if ((f - a) % 120 === 0) console.log(`w${w} frame ${f}/${b} ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   }
   if (br) br.close();
   ff.stdin.end();

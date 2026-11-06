@@ -12,7 +12,8 @@ export async function launch({ width, height, scale = 1, port = 9333 }) {
   const proc = spawn(EDGE, [
     "--headless=new", "--no-sandbox", "--disable-gpu-sandbox", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--no-first-run", "--hide-scrollbars", "--force-color-profile=srgb",
-    "--disable-features=msEdgeSidebarV2", "--mute-audio", "--allow-file-access-from-files", "about:blank",
+    "--disable-features=msEdgeSidebarV2", "--mute-audio", "--allow-file-access-from-files", "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+    "--disable-backgrounding-occluded-windows", "--disable-features=CalculateNativeWinOcclusion", "about:blank",
   ], { stdio: "ignore" });
 
   let target;
