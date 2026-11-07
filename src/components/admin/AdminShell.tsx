@@ -1,15 +1,16 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Logo, Spinner, Toast } from '@/components/ui';
 import { signOut, useSession } from '@/hooks/useSession';
-import { supabaseConfigured } from '@/lib/supabase/client';
+import { sb, supabaseConfigured } from '@/lib/supabase/client';
 
-const MOD_NAV = ['/admin/orders', '/admin/support'];
+const MOD_NAV = ['/admin/orders', '/admin/payments', '/admin/support'];
 const NAV: [string, string][] = [
   ['/admin', 'Обзор и аналитика'],
   ['/admin/orders', 'Заказы'],
+  ['/admin/payments', 'Оплата'],
   ['/admin/products', 'Меню и цены'],
   ['/admin/branches', 'Филиалы'],
   ['/admin/staff', 'Сотрудники и роли'],
@@ -35,6 +36,26 @@ const CSS = `
 @media (max-width:760px){.admin-wrap{flex-direction:column}.admin-side{position:sticky;top:0;z-index:30;height:auto;flex:none;flex-direction:row;align-items:center;overflow-x:auto;padding:10px 12px;gap:6px}.admin-side .admin-brand-text,.admin-side .admin-foot{display:none}.admin-side .admin-brand{padding:0 6px 0 0}.admin-side a{flex:none;white-space:nowrap}.admin-main{padding:16px}.admin-grid2{grid-template-columns:1fr}.admin-grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
+/** Counters shown in the sidebar: receipts waiting for review and kitchen cancel requests. */
+function useAttention(enabled: boolean) {
+  const [n, setN] = useState({ review: 0, cancel: 0 });
+  const load = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      sb().from('orders').select('id', { count: 'exact', head: true }).eq('payment_state', 'REVIEW').eq('status', 'PENDING'),
+      sb().from('orders').select('id', { count: 'exact', head: true }).not('cancel_requested_at', 'is', null),
+    ]);
+    if (!a.error && !b.error) setN({ review: a.count ?? 0, cancel: b.count ?? 0 });
+  }, []);
+  useEffect(() => {
+    if (!enabled) return;
+    const first = setTimeout(load, 0);
+    const poll = setInterval(load, 30_000);
+    const ch = sb().channel('admin-attention').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => load()).subscribe();
+    return () => { clearTimeout(first); clearInterval(poll); sb().removeChannel(ch); };
+  }, [enabled, load]);
+  return n;
+}
+
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
@@ -45,6 +66,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }, [session.ready, session.user, router]);
 
   const isAdmin = session.roles.includes('ADMIN');
+  const attention = useAttention(session.ready && !!session.user && (isAdmin || session.roles.includes('MODERATOR')));
   const isMod = !isAdmin && session.roles.includes('MODERATOR');
   const nav = isMod ? NAV.filter(([h]) => MOD_NAV.includes(h)) : NAV;
   const modAllowed = MOD_NAV.some((h) => path === h || path.startsWith(h + '/'));
@@ -88,7 +110,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           const active = href === '/admin' ? path === '/admin' : path.startsWith(href);
           return (
             <Link key={href} href={href} className="btn" aria-current={active ? 'page' : undefined}
-              style={{ minHeight: 48, borderRadius: 14, padding: '0 14px', display: 'flex', alignItems: 'center', fontWeight: 800, fontSize: 14, background: active ? '#FF6A0A' : 'transparent', color: '#fff', textDecoration: 'none' }}>{label}</Link>
+              style={{ minHeight: 48, borderRadius: 14, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 14, background: active ? '#FF6A0A' : 'transparent', color: '#fff', textDecoration: 'none' }}>
+              {label}
+              {(() => { const c = href === '/admin/payments' ? attention.review : href === '/admin/orders' ? attention.cancel : 0; return c > 0 ? <span aria-label={`Требуют внимания: ${c}`} style={{ minWidth: 22, height: 22, padding: '0 6px', borderRadius: 11, background: active ? '#141210' : '#E5360B', color: '#fff', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{c}</span> : null; })()}
+            </Link>
           );
         })}
         <div className="admin-foot" style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 12 }}>

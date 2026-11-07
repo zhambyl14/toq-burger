@@ -17,7 +17,7 @@ import { PricePill } from '@/components/customer/PricePill';
 import { PriceTag } from '@/components/customer/PriceTag';
 import { formatPhone } from '@/lib/phone';
 import { sb, supabaseConfigured } from '@/lib/supabase/client';
-import { PAYMENT_METHODS } from '@/config/payments';
+import { enabledMethods, usePaymentSettings, type MethodId } from '@/features/payments/settings';
 import type { Meat } from '@/types/catalog';
 import '@/styles/flow.css';
 
@@ -27,6 +27,7 @@ const ORDER_ERR: Record<string, [string, string]> = {
   BRANCH_UNAVAILABLE: ['Филиал сейчас не принимает заказы. Выберите время после 08:00', 'Филиал қазір тапсырыс қабылдамайды. 08:00-ден кейінгі уақытты таңдаңыз'],
   PRODUCT_UNAVAILABLE: ['Одна из позиций сейчас недоступна. Обновите корзину', 'Позициялардың бірі қазір қолжетімсіз. Себетті жаңартыңыз'],
   EXTRA_UNAVAILABLE: ['Добавка недоступна. Обновите корзину', 'Қосымша қолжетімсіз. Себетті жаңартыңыз'],
+  PAYMENT_UNAVAILABLE: ['Этот способ оплаты сейчас недоступен. Выберите другой', 'Бұл төлем тәсілі қазір қолжетімсіз. Басқасын таңдаңыз'],
   PROMO_INVALID: ['Промокод недействителен', 'Промокод жарамсыз'],
   BELOW_MIN_ORDER: ['Сумма заказа меньше минимальной для доставки', 'Тапсырыс сомасы жеткізудің ең төменгі сомасынан аз'],
   ADDRESS_REQUIRED: ['Укажите адрес доставки', 'Жеткізу мекенжайын көрсетіңіз'],
@@ -62,7 +63,10 @@ export default function CheckoutPage() {
   const [slotIdx, setSlotIdx] = useState(0);
   const scheduled = timeMode === 'later' || brk ? slotList[slotIdx]?.at : undefined;
   const quote = useQuote(scheduled);
-  const [pay, setPay] = useState(PAYMENT_METHODS.find((p) => p.enabled)?.id ?? 'CASH');
+  const payCfg = usePaymentSettings();
+  const methods = useMemo(() => (payCfg ? enabledMethods(payCfg) : []), [payCfg]);
+  const [payPick, setPay] = useState<MethodId | null>(null);
+  const pay: MethodId | null = payPick && methods.includes(payPick) ? payPick : methods[0] ?? null;
   const [contactEdit, setContact] = useState<string | null>(null);
   const contact = contactEdit ?? session.phone?.slice(2) ?? '';
   const [busy, setBusy] = useState(false);
@@ -101,7 +105,7 @@ export default function CheckoutPage() {
   const isDelivery = s.mode === 'DELIVERY';
   const addrOk = !isDelivery || (!!s.address && !!quote.branch);
   const pickupOk = isDelivery || !!quote.branch;
-  const canPlace = s.cart.length > 0 && tot.unavailable === 0 && addrOk && pickupOk && contact.length === 10;
+  const canPlace = !!pay && s.cart.length > 0 && tot.unavailable === 0 && addrOk && pickupOk && contact.length === 10;
   const branchBg = quote.branch ? '#2E8B3F' : '#B3261E';
   const branchTitle = quote.branch ? quote.branch.name : isDelivery ? (s.address ? t('Адрес вне зоны доставки', 'Мекенжай жеткізу аймағынан тыс') : t('Адрес не выбран', 'Мекенжай таңдалмаған')) : t('Филиал не выбран', 'Филиал таңдалмаған');
   const branchMsg = !isDelivery
@@ -112,12 +116,11 @@ export default function CheckoutPage() {
   const phoneHint = contact.length === 0 ? t('Нужен номер для связи с курьером', 'Курьермен байланысу үшін нөмір керек') : contact.length < 10 ? t(`Введите ещё ${10 - contact.length} цифр`, `Тағы ${10 - contact.length} сан енгізіңіз`) : '';
   const stepDone = [addrOk && pickupOk, true, true];
   const stepTitles = [t('Адрес', 'Мекенжай'), t('Время', 'Уақыт'), t('Оплата', 'Төлем')];
-  const payLabel = (id: string, fallback: string) => (id === 'CASH' ? t('Наличными или картой курьеру / на кассе', 'Қолма-қол немесе картамен курьерге / кассада') : id === 'ONLINE' ? t('Онлайн-оплата картой', 'Картамен онлайн төлеу') : fallback);
-  const picked = PAYMENT_METHODS.find((x) => x.id === pay);
+  const payLabel = (id: MethodId) => (id === 'CASH' ? t('Наличными или картой курьеру / на кассе', 'Қолма-қол немесе картамен курьерге / кассада') : t('Kaspi: QR, ссылка или перевод по номеру', 'Kaspi: QR, сілтеме немесе нөмір бойынша аудару'));
   const stepSub = [
     addrOk && pickupOk ? (isDelivery ? (quote.branch?.short_name ?? t('Готово', 'Дайын')) : t('Самовывоз', 'Өзі алып кету')) : t('Выберите', 'Таңдаңыз'),
     scheduled ? (slotList[slotIdx]?.label ?? t('Ко времени', 'Уақытқа')) : t('Скорее', 'Тезірек'),
-    picked ? (picked.id === 'CASH' ? t('Наличными', 'Қолма-қол') : payLabel(picked.id, picked.label)) : t('Выберите', 'Таңдаңыз'),
+    pay ? (pay === 'CASH' ? t('Наличными', 'Қолма-қол') : 'Kaspi') : t('Выберите', 'Таңдаңыз'),
   ];
 
   const placeText = !s.cart.length ? t('Корзина пуста', 'Себет бос')
@@ -129,6 +132,7 @@ export default function CheckoutPage() {
   const place = async () => {
     if (busy) return;
     if (!session.user) { router.push('/auth?next=/checkout'); return; }
+    if (!pay) { toast(t('Нет доступного способа оплаты', 'Қолжетімді төлем тәсілі жоқ')); return; }
     if (!canPlace) { toast(contact.length !== 10 ? t('Укажите контактный телефон', 'Байланыс телефонын көрсетіңіз') : placeText); return; }
     setBusy(true);
     const key = s.pendingOrderKey ?? crypto.randomUUID();
@@ -281,19 +285,26 @@ export default function CheckoutPage() {
 
           <div id="co-2" className="fl-card" style={{ scrollMarginTop: 92 }}>
             <h2 className="disp fl-h">{t('Оплата', 'Төлем')}</h2>
-            <div role="radiogroup" aria-label={t('Способ оплаты', 'Төлем тәсілі')} className="fl-opts">
-              {PAYMENT_METHODS.map((p) => {
-                const on = pay === p.id;
-                return (
-                  <button key={p.id} role="radio" aria-checked={on} disabled={!p.enabled} className={'btn fl-opt' + (on ? ' fl-opt--on' : '')} onClick={() => setPay(p.id)}
-                    style={{ border: `2px solid ${on ? '#FF6A0A' : '#F3EADF'}`, opacity: p.enabled ? 1 : 0.5 }}>
-                    {radio(on)}
-                    <span style={{ fontWeight: 800, fontSize: 14, flex: 1 }}>{payLabel(p.id, p.label)}</span>
-                    {!p.enabled && <span style={{ fontSize: 11, fontWeight: 800, color: '#6B6258' }}>{t('скоро', 'жақында')}</span>}
-                  </button>
-                );
-              })}
-            </div>
+            {!payCfg ? <div style={{ height: 56 }} aria-busy="true" /> : !methods.length ? (
+              <div role="alert" style={{ marginTop: 10, fontSize: 14, fontWeight: 700, color: '#B3261E' }}>{t('Оплата временно недоступна. Попробуйте позже или позвоните в филиал.', 'Төлем уақытша қолжетімсіз. Кейінірек көріңіз немесе филиалға қоңырау шалыңыз.')}</div>
+            ) : (
+              <div role="radiogroup" aria-label={t('Способ оплаты', 'Төлем тәсілі')} className="fl-opts">
+                {methods.map((id) => {
+                  const on = pay === id;
+                  const hint = id === 'KASPI_QR' ? t('Оплатите и загрузите чек — заказ уйдёт на кухню после проверки', 'Төлеп, чекті жүктеңіз — тексергеннен кейін тапсырыс асханаға кетеді') : (payCfg ? tx(payCfg.cash_note, payCfg.cash_note_kk) : '');
+                  return (
+                    <button key={id} role="radio" aria-checked={on} className={'btn fl-opt' + (on ? ' fl-opt--on' : '')} onClick={() => setPay(id)}
+                      style={{ border: `2px solid ${on ? '#FF6A0A' : '#F3EADF'}`, padding: '10px 14px' }}>
+                      {radio(on)}
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontWeight: 800, fontSize: 14 }}>{payLabel(id)}</span>
+                        {hint && <span style={{ display: 'block', fontWeight: 600, fontSize: 12, color: '#6B6258', marginTop: 2, lineHeight: 1.35 }}>{hint}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

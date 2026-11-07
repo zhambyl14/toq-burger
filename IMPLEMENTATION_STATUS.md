@@ -13,5 +13,7 @@
 - **Product photos**: upload in Admin → Меню (the design's photos are not downloadable from the design tool).
 - **WhatsApp bot**: run `whatsapp-bot` on an always-on machine/VPS, scan the QR with a dedicated WhatsApp Business number, set `WHATSAPP_BOT_URL`/`WHATSAPP_BOT_TOKEN`. Until then only the test numbers can log in.
 - **Drink prices, delivery fees, radius, promo codes**: set in the admin panel (no invented values).
-- **Payments**: only cash/card-on-delivery is enabled. Kaspi QR / online need a provider contract; orders are never marked paid without a verified callback.
+- **Payments** (migration 19): admin-managed in Admin → Оплата. Cash and/or Kaspi (QR image, pay link, transfer phone, instructions kk/ru, payment timeout). Kaspi orders wait in `AWAITING_RECEIPT` → customer uploads a receipt (private `receipts` bucket) → `REVIEW` → admin/moderator confirms/rejects. Kitchen only sees an online order once it is payable (cash or confirmed); unpaid orders auto-cancel after the timeout; cancelled paid orders land in a «нужен возврат» list. No card acquiring yet (`ONLINE` is refused by the DB).
+- **Kitchen**: online and offline (walk-in) orders are separate tabs; kitchen can create offline orders (paid at the till) but can NOT cancel — it files a cancel request, admin/moderator approves or dismisses (Admin → Заказы, red counter in the sidebar).
+- **Admin**: create/delete branches (new branch starts closed to orders), payments review queue, source filter, cancel-request resolution.
 - **Push notifications (FCM)**: notification rows are written per status change; delivery to devices needs FCM credentials.

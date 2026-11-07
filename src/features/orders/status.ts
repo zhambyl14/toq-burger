@@ -51,6 +51,15 @@ export function orderErr(message: string): string {
   if (message.includes('COURIER_INACTIVE')) return 'Курьер неактивен';
   if (message.includes('HAS_ACTIVE_ORDERS')) return 'Нельзя уйти с линии: есть активные заказы';
   if (message.includes('ALREADY_ON_DELIVERY')) return 'Сначала завершите текущую доставку';
+  if (message.includes('PAYMENT_NOT_CONFIRMED')) return 'Оплата заказа ещё не подтверждена';
+  if (message.includes('REASON_REQUIRED')) return 'Укажите причину (минимум 3 символа)';
+  if (message.includes('ALREADY_REQUESTED')) return 'Запрос на отмену уже отправлен';
+  if (message.includes('INVALID_PAYMENT_STATE')) return 'Статус оплаты уже изменился — обновите';
+  if (message.includes('NO_REQUEST')) return 'Запроса на отмену нет';
+  if (message.includes('PRODUCT_UNAVAILABLE')) return 'Позиция недоступна (стоп-лист или нет цены)';
+  if (message.includes('EXTRA_UNAVAILABLE')) return 'Добавка недоступна';
+  if (message.includes('BAD_PHONE')) return 'Телефон: +7 и 10 цифр';
+  if (message.includes('EMPTY_CART')) return 'Добавьте позиции в заказ';
   return 'Ошибка. Попробуйте ещё раз';
 }
 
@@ -87,6 +96,15 @@ export function orderErrL(message: string, lang: Lang): string {
   if (message.includes('COURIER_INACTIVE')) return 'Курьер белсенді емес';
   if (message.includes('HAS_ACTIVE_ORDERS')) return 'Желіден шығу мүмкін емес: белсенді тапсырыстар бар';
   if (message.includes('ALREADY_ON_DELIVERY')) return 'Алдымен ағымдағы жеткізуді аяқтаңыз';
+  if (message.includes('PAYMENT_NOT_CONFIRMED')) return 'Тапсырыс төлемі әлі расталмаған';
+  if (message.includes('REASON_REQUIRED')) return 'Себебін жазыңыз (кемінде 3 таңба)';
+  if (message.includes('ALREADY_REQUESTED')) return 'Бас тарту сұрауы жіберілген';
+  if (message.includes('INVALID_PAYMENT_STATE')) return 'Төлем мәртебесі өзгерген — жаңартыңыз';
+  if (message.includes('NO_REQUEST')) return 'Бас тарту сұрауы жоқ';
+  if (message.includes('PRODUCT_UNAVAILABLE')) return 'Позиция қолжетімсіз (стоп-тізім немесе бағасы жоқ)';
+  if (message.includes('EXTRA_UNAVAILABLE')) return 'Қосымша қолжетімсіз';
+  if (message.includes('BAD_PHONE')) return 'Телефон: +7 және 10 сан';
+  if (message.includes('EMPTY_CART')) return 'Тапсырысқа позиция қосыңыз';
   return 'Қате. Қайтадан көріңіз';
 }
 

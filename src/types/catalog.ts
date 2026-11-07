@@ -89,7 +89,7 @@ export interface OrderItemRow {
 export interface OrderRow {
   id: string;
   order_no: number;
-  user_id: string;
+  user_id: string | null;
   branch_id: string;
   status: OrderStatus;
   mode: 'DELIVERY' | 'PICKUP';
@@ -111,6 +111,10 @@ export interface OrderRow {
   total_kzt: number;
   payment_method: 'KASPI_QR' | 'ONLINE' | 'CASH';
   courier_id: string | null;
+  source: 'ONLINE' | 'OFFLINE';
+  payment_state: PaymentState;
+  cancel_requested_at: string | null;
+  cancel_request_reason: string | null;
   created_at: string;
   accepted_at: string | null;
   preparing_at: string | null;
@@ -119,3 +123,5 @@ export interface OrderRow {
   delivered_at: string | null;
   order_items?: OrderItemRow[];
 }
+
+export type PaymentState = 'NOT_REQUIRED' | 'AWAITING_RECEIPT' | 'REVIEW' | 'CONFIRMED' | 'REJECTED';

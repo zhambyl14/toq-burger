@@ -27,6 +27,7 @@ export default function AdminBranches() {
   const [list, setList] = useState<Branch[] | null>(null);
   const [hours, setHours] = useState<HoursRow[]>([]);
   const [edit, setEdit] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     const [b, h] = await Promise.all([
@@ -55,7 +56,10 @@ export default function AdminBranches() {
 
   return (
     <>
-      <PageHead title="Филиалы" />
+      <PageHead title="Филиалы">
+        <button className="btn primary" onClick={() => setAdding(true)} style={{ minHeight: 48, padding: '0 22px', borderRadius: 24, fontSize: 14 }}>+ Добавить филиал</button>
+      </PageHead>
+      {list.length === 0 && <Panel style={{ marginTop: 20, fontWeight: 700, color: '#6B6258' }}>Филиалов пока нет. Добавьте первый.</Panel>}
       <div className="admin-grid2" style={{ marginTop: 20 }}>
         {list.map((b) => (
           <Panel key={b.id}>
@@ -79,12 +83,13 @@ export default function AdminBranches() {
           </Panel>
         ))}
       </div>
-      {edit && <BranchEditor b={list.find((x) => x.id === edit)!} hours={hours.filter((h) => h.branch_id === edit)} onClose={() => setEdit(null)} onSaved={load} onFlip={flip} />}
+      {adding && <NewBranch onClose={() => setAdding(false)} onCreated={(id) => { setAdding(false); load().then(() => setEdit(id)); }} />}
+      {edit && list.some((x) => x.id === edit) && <BranchEditor b={list.find((x) => x.id === edit)!} hours={hours.filter((h) => h.branch_id === edit)} onClose={() => setEdit(null)} onSaved={load} onFlip={flip} onDeleted={() => { setEdit(null); load(); }} />}
     </>
   );
 }
 
-function BranchEditor({ b, hours, onClose, onSaved, onFlip }: { b: Branch; hours: HoursRow[]; onClose: () => void; onSaved: () => void; onFlip: (b: Branch, f: 'accepts_orders' | 'is_active', v: boolean) => void }) {
+function BranchEditor({ b, hours, onClose, onSaved, onFlip, onDeleted }: { b: Branch; hours: HoursRow[]; onClose: () => void; onSaved: () => void; onFlip: (b: Branch, f: 'accepts_orders' | 'is_active', v: boolean) => void; onDeleted: () => void }) {
   const [f, setF] = useState({
     name: b.name, short_name: b.short_name, address: b.address, map_url: b.map_url ?? '',
     lat: b.lat == null ? '' : String(b.lat), lon: b.lon == null ? '' : String(b.lon),
@@ -146,6 +151,17 @@ function BranchEditor({ b, hours, onClose, onSaved, onFlip }: { b: Branch; hours
         </div>
       </Panel>
       <HoursEditor branchId={b.id} hours={hours} onSaved={onSaved} />
+      <Panel style={{ marginTop: 12 }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: '#B3261E' }}>Удаление филиала</div>
+        <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 4, lineHeight: 1.4 }}>Удалить можно только филиал без заказов (например, созданный по ошибке). Если заказы были — просто скройте филиал переключателем выше.</div>
+        <button className="btn" onClick={async () => {
+          if (!confirm(`Удалить филиал «${b.name}» без возможности восстановления?`)) return;
+          const { error } = await sb().rpc('admin_delete_branch', { p_branch: b.id });
+          if (error) return toast(errText(error.message));
+          toast('Филиал удалён');
+          onDeleted();
+        }} style={{ marginTop: 10, minHeight: 44, padding: '0 18px', borderRadius: 22, background: '#FDECEA', color: '#B3261E', fontWeight: 800, fontSize: 13 }}>Удалить филиал</button>
+      </Panel>
     </Drawer>
   );
 }
@@ -199,5 +215,50 @@ function HoursEditor({ branchId, hours, onSaved }: { branchId: string; hours: Ho
       ))}
       <button className="btn dark" disabled={busy} onClick={save} style={{ marginTop: 14, width: '100%', height: 48, borderRadius: 24 }}>{busy ? <Spinner /> : 'Сохранить часы'}</button>
     </Panel>
+  );
+}
+
+function NewBranch({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const [f, setF] = useState({ name: '', short_name: '', address: '', lat: '', lon: '', delivery_radius_km: '8', delivery_fee_kzt: '0', min_order_kzt: '0' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const fld = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+
+  const create = async () => {
+    const p = branchSchema.safeParse({ ...f, map_url: '' });
+    if (!p.success) { setErr(p.error.issues[0].message); return; }
+    const d = p.data;
+    setErr(''); setBusy(true);
+    const { data, error } = await sb().rpc('admin_create_branch', {
+      p_name: d.name, p_short_name: d.short_name, p_address: d.address,
+      p_lat: d.lat === '' ? null : d.lat, p_lon: d.lon === '' ? null : d.lon,
+      p_radius: d.delivery_radius_km, p_fee: d.delivery_fee_kzt, p_min: d.min_order_kzt,
+    });
+    setBusy(false);
+    if (error) return setErr(errText(error.message));
+    toast('Филиал создан. Проверьте часы работы и включите приём заказов');
+    onCreated(data as string);
+  };
+
+  return (
+    <Drawer open onClose={onClose} title="Новый филиал">
+      <Panel>
+        <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 600, lineHeight: 1.4 }}>Новый филиал создаётся <b>закрытым для заказов</b> с графиком 00–06 и 08–24. Дальше: уточните координаты и часы, привяжите сотрудников (раздел «Сотрудники») и включите «Принимает заказы».</div>
+        <Label>НАЗВАНИЕ</Label><input className="field" value={f.name} onChange={fld('name')} placeholder="TOK BURGER Достык" />
+        <Label>КОРОТКОЕ НАЗВАНИЕ</Label><input className="field" value={f.short_name} onChange={fld('short_name')} placeholder="Достык" />
+        <Label>АДРЕС</Label><input className="field" value={f.address} onChange={fld('address')} placeholder="Алматы, пр. Достык 100" />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1 }}><Label>ШИРОТА (необязательно)</Label><input className="field" value={f.lat} onChange={fld('lat')} inputMode="decimal" placeholder="43.2…" /></div>
+          <div style={{ flex: 1 }}><Label>ДОЛГОТА</Label><input className="field" value={f.lon} onChange={fld('lon')} inputMode="decimal" placeholder="76.9…" /></div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 110 }}><Label>РАДИУС, КМ</Label><input className="field" value={f.delivery_radius_km} onChange={fld('delivery_radius_km')} inputMode="decimal" /></div>
+          <div style={{ flex: 1, minWidth: 110 }}><Label>ДОСТАВКА, ₸</Label><input className="field" value={f.delivery_fee_kzt} onChange={fld('delivery_fee_kzt')} inputMode="numeric" /></div>
+          <div style={{ flex: 1, minWidth: 110 }}><Label>МИН. ЗАКАЗ, ₸</Label><input className="field" value={f.min_order_kzt} onChange={fld('min_order_kzt')} inputMode="numeric" /></div>
+        </div>
+        {err && <div role="alert" style={{ color: '#B3261E', fontWeight: 700, fontSize: 13, marginTop: 10 }}>{err}</div>}
+        <button className="btn primary" disabled={busy} onClick={create} style={{ marginTop: 14, width: '100%', height: 48, borderRadius: 24 }}>{busy ? <Spinner /> : 'Создать филиал'}</button>
+      </Panel>
+    </Drawer>
   );
 }

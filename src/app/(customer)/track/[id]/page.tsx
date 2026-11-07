@@ -7,7 +7,9 @@ import { useCatalog } from '@/components/CatalogProvider';
 import { toast } from '@/components/ui';
 import { unitPrice } from '@/features/cart/pricing';
 import { BoltMark } from '@/components/customer/BoltMark';
+import { PaymentPanel } from '@/components/customer/PaymentPanel';
 import { PricePill } from '@/components/customer/PricePill';
+import { PAY_STATE_LABEL } from '@/features/payments/settings';
 import { useLang } from '@/i18n/LangProvider';
 import { useApp } from '@/stores/app';
 import { courierNoteL, CUSTOMER_STEPS, PICKUP_STEPS, stepIndex, stepLabels } from '@/features/orders/status';
@@ -63,6 +65,7 @@ export default function TrackPage() {
     let alive = true;
     let retry: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
+      await sb().rpc('expire_unpaid_orders');
       const { data, error } = await sb().from('orders').select('*, order_items(*)').eq('id', id).maybeSingle();
       if (!alive) return;
       if (error) {
@@ -137,7 +140,8 @@ export default function TrackPage() {
   const st = stepIndex(order.status, order.mode);
   const cancelled = order.status === 'CANCELLED';
   const delivered = order.status === 'DELIVERED';
-  const label = cancelled ? t('Заказ отменён', 'Тапсырыс бас тартылды') : steps[st];
+  const unpaid = order.payment_method === 'KASPI_QR' && order.status === 'PENDING' && order.payment_state !== 'CONFIRMED' && order.payment_state !== 'NOT_REQUIRED';
+  const label = cancelled ? t('Заказ отменён', 'Тапсырыс бас тартылды') : unpaid ? tx(...PAY_STATE_LABEL[order.payment_state]) : steps[st];
   const note = cancelled ? null : courierNoteL(order.status, order.mode, !!order.courier_id, lang);
   const meatL = (m: Meat) => (m === 'beef' ? t('Говядина', 'Сиыр еті') : m === 'chicken' ? t('Курица', 'Тауық еті') : '');
   const itemName = (nm: string) => { const p = products.find((x) => x.name === nm); return p ? tx(p.name, p.nameKk) : nm; };
@@ -185,7 +189,8 @@ export default function TrackPage() {
 
       <div className="fl-trk">
         <div className="fl-trk__left">
-          {!cancelled && (
+          {session.user && <PaymentPanel order={order} userId={session.user.id} />}
+          {!cancelled && !unpaid && (
             <div className="fl-card fl-card--o" style={{ padding: 18 }}>
               {steps.map((s, i) => {
                 const done = i < st || delivered, act = i === st && !delivered;

@@ -7,6 +7,7 @@ import { StaffGuard } from '@/components/staff/StaffGuard';
 import { useMounted } from '@/features/catalog/hooks';
 import { meatLabel } from '@/features/courier/helpers';
 import { useOrderNames } from '@/features/kitchen/names';
+import { OfflineOrder } from '@/features/kitchen/OfflineOrder';
 import { StopList } from '@/features/kitchen/StopList';
 import { loadMuted, saveMuted, unlockAudio } from '@/features/kitchen/sound';
 import { startOfAlmatyDay, useBranchOrders, useStaffBranches } from '@/features/kitchen/useKitchen';
@@ -19,6 +20,7 @@ import { formatPhone } from '@/lib/phone';
 import { sb } from '@/lib/supabase/client';
 import type { OrderRow, OrderStatus } from '@/types/catalog';
 
+type Src = 'all' | 'ONLINE' | 'OFFLINE';
 type Col = 'new' | 'accepted' | 'cooking' | 'ready' | 'delivery' | 'done' | 'cancelled';
 
 const COLS: { k: Col; label: [string, string]; color: string; statuses: OrderStatus[] }[] = [
@@ -55,6 +57,8 @@ function Kitchen() {
   const [stopList, setStopList] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ kind: 'release' | 'cancel'; order: OrderRow } | null>(null);
+  const [src, setSrc] = useState<Src>('all');
+  const [offline, setOffline] = useState(false);
   const [reason, setReason] = useState('');
   const { orders, couriers, reload } = useBranchOrders(branchId, muted);
 
@@ -65,18 +69,21 @@ function Kitchen() {
   }, []);
 
   const today = startOfAlmatyDay();
-  const byCol = useMemo(() => {
+  const { byCol, srcCount } = useMemo(() => {
     const m: Record<Col, OrderRow[]> = { new: [], accepted: [], cooking: [], ready: [], delivery: [], done: [], cancelled: [] };
+    const cnt = { all: 0, ONLINE: 0, OFFLINE: 0 };
     (orders ?? []).forEach((o) => {
       const c = COLS.find((x) => x.statuses.includes(o.status));
       if (!c) return;
       if ((c.k === 'done' || c.k === 'cancelled') && o.created_at < today) return;
+      if (c.k !== 'done' && c.k !== 'cancelled') { cnt.all++; cnt[o.source]++; }
+      if (src !== 'all' && o.source !== src) return;
       m[c.k].push(o);
     });
     m.done.reverse();
     m.cancelled.reverse();
-    return m;
-  }, [orders, today]);
+    return { byCol: m, srcCount: cnt };
+  }, [orders, today, src]);
 
   const act = async (o: OrderRow, to: OrderStatus, note?: string) => {
     setBusy(o.id);
@@ -90,8 +97,16 @@ function Kitchen() {
   const confirmDialog = async () => {
     if (!dialog) return;
     const { kind, order: o } = dialog;
+    if (kind === 'cancel' && reason.trim().length < 3) { toast(orderErrL('REASON_REQUIRED', lang)); return; }
     setDialog(null);
-    if (kind === 'cancel') { await act(o, 'CANCELLED', 'Отменён кухней'); return; }
+    if (kind === 'cancel') {
+      setBusy(o.id);
+      const { error } = await sb().rpc('request_order_cancel', { p_order: o.id, p_reason: reason.trim() });
+      setBusy(null);
+      toast(error ? orderErrL(error.message, lang) : t('Запрос отправлен администратору', 'Сұрау әкімшіге жіберілді'));
+      reload();
+      return;
+    }
     setBusy(o.id);
     const { error } = await sb().rpc('release_courier', { p_order: o.id, p_reason: reason.trim() || null });
     setBusy(null);
@@ -109,7 +124,7 @@ function Kitchen() {
         <Logo size={44} radius={14} />
         <div style={{ flex: 1, minWidth: 180 }}>
           <div className="disp" style={{ fontSize: 18, fontWeight: 800 }}>{t('Кухня', 'Асхана')}{branch ? ' · ' + branch.short_name : ''}</div>
-          <div style={{ fontSize: 12, color: '#B9AFA3', fontWeight: 700 }}>{t('Оператор · видит только заказы своего филиала', 'Оператор · тек өз филиалының тапсырыстарын көреді')}</div>
+          <div style={{ fontSize: 12, color: '#B9AFA3', fontWeight: 700 }}>{t('Оператор · видит только оплаченные заказы своего филиала', 'Оператор · тек өз филиалының төленген тапсырыстарын көреді')}</div>
         </div>
         {branches && branches.length > 1 && (
           <div role="tablist" aria-label={t('Филиал', 'Филиал')} style={{ display: 'flex', gap: 6, background: '#241F1B', borderRadius: 22, padding: 4, flexWrap: 'wrap' }}>
@@ -123,6 +138,7 @@ function Kitchen() {
           <LangSwitch variant="dark" />
           <button className="btn" onClick={toggleMute} aria-pressed={!muted} aria-label={muted ? t('Включить звук', 'Дыбысты қосу') : t('Выключить звук', 'Дыбысты өшіру')}
             style={{ minHeight: 44, padding: '0 14px', borderRadius: 18, background: '#241F1B', color: '#fff', fontWeight: 800, fontSize: 13 }}>{muted ? t('🔕 Звук выкл', '🔕 Дыбыс өшірулі') : t('🔔 Звук вкл', '🔔 Дыбыс қосулы')}</button>
+          {branchId && <button className="btn" onClick={() => setOffline(true)} style={{ minHeight: 44, padding: '0 14px', borderRadius: 18, background: '#FF6A0A', color: '#fff', fontWeight: 800, fontSize: 13 }}>{t('+ Офлайн-заказ', '+ Офлайн тапсырыс')}</button>}
           {branchId && <button className="btn" onClick={() => setStopList(true)} style={{ minHeight: 44, padding: '0 14px', borderRadius: 18, background: '#241F1B', color: '#fff', fontWeight: 800, fontSize: 13 }}>{t('Стоп-лист', 'Стоп-тізім')}</button>}
           {isAdmin && <Link href="/admin" className="btn" style={{ minHeight: 44, padding: '0 14px', borderRadius: 18, background: '#241F1B', color: '#fff', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', textDecoration: 'none' }}>{t('Админ', 'Әкімші')}</Link>}
           <button className="btn" onClick={async () => { await signOut(); router.replace('/'); }} style={{ minHeight: 44, padding: '0 14px', borderRadius: 18, background: '#241F1B', color: '#B9AFA3', fontWeight: 800, fontSize: 13 }}>{t('Выйти', 'Шығу')}</button>
@@ -133,7 +149,16 @@ function Kitchen() {
         <div style={{ textAlign: 'center', padding: 80, color: '#6B6258', fontWeight: 700, fontSize: 16 }}>{t('Вы не прикреплены ни к одному филиалу. Обратитесь к администратору.', 'Сіз ешбір филиалға бекітілмегенсіз. Әкімшіге хабарласыңыз.')}</div>
       ) : (
         <>
-          <div role="tablist" aria-label={t('Статус', 'Мәртебе')} style={{ flex: 'none', display: 'flex', gap: 8, padding: '16px 24px 0', flexWrap: 'wrap' }}>
+          <div role="tablist" aria-label={t('Источник', 'Көз')} style={{ flex: 'none', display: 'flex', gap: 8, padding: '16px 24px 0', flexWrap: 'wrap' }}>
+            {([['all', t('Все заказы', 'Барлық тапсырыс')], ['ONLINE', t('Онлайн (сайт)', 'Онлайн (сайт)')], ['OFFLINE', t('Офлайн (зал/касса)', 'Офлайн (зал/касса)')]] as [Src, string][]).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={src === k} className="btn" onClick={() => setSrc(k)}
+                style={{ minHeight: 44, padding: '0 16px', borderRadius: 22, fontWeight: 800, fontSize: 13, background: src === k ? '#FF6A0A' : '#fff', color: src === k ? '#fff' : '#141210', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {label}
+                <span style={{ minWidth: 22, height: 22, padding: '0 6px', borderRadius: 11, background: src === k ? 'rgba(0,0,0,.25)' : '#F3EADF', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{srcCount[k]}</span>
+              </button>
+            ))}
+          </div>
+          <div role="tablist" aria-label={t('Статус', 'Мәртебе')} style={{ flex: 'none', display: 'flex', gap: 8, padding: '12px 24px 0', flexWrap: 'wrap' }}>
             {COLS.map((c) => (
               <button key={c.k} role="tab" aria-selected={col === c.k} className="btn" onClick={() => setCol(c.k)}
                 style={{ minHeight: 48, padding: '0 18px', borderRadius: 24, fontWeight: 800, fontSize: 14, background: col === c.k ? '#141210' : '#fff', color: col === c.k ? '#fff' : '#141210', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -154,7 +179,8 @@ function Kitchen() {
                 {list.map((o) => {
                   const color = STATUS_COLOR[o.status];
                   const nx = nextAction(o);
-                  const canCancel = o.status === 'PENDING' || o.status === 'ACCEPTED';
+                  const canAskCancel = !o.cancel_requested_at && ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COURIER_ASSIGNED'].includes(o.status);
+                  const isOff = o.source === 'OFFLINE';
                   const delivery = o.mode === 'DELIVERY';
                   const cInfo = o.courier_id ? couriers[o.courier_id] : undefined;
                   const canRelease = delivery && !!o.courier_id && RELEASABLE.includes(o.status);
@@ -167,7 +193,9 @@ function Kitchen() {
                       </div>
                       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                         <span style={{ padding: '4px 10px', borderRadius: 10, background: color, color: '#fff', fontSize: 12, fontWeight: 800 }}>{statusLabel(o.status, lang)}</span>
-                        <span style={{ padding: '4px 10px', borderRadius: 10, background: '#F3EADF', fontSize: 12, fontWeight: 800 }}>{o.mode === 'DELIVERY' ? t('Доставка', 'Жеткізу') : t('Самовывоз', 'Өзі алып кету')}</span>
+                        {isOff
+                          ? <span style={{ padding: '4px 10px', borderRadius: 10, background: '#0B6EE5', color: '#fff', fontSize: 12, fontWeight: 800 }}>{t('Зал / касса', 'Зал / касса')}</span>
+                          : <span style={{ padding: '4px 10px', borderRadius: 10, background: '#F3EADF', fontSize: 12, fontWeight: 800 }}>{t('Онлайн', 'Онлайн')} · {o.mode === 'DELIVERY' ? t('Доставка', 'Жеткізу') : t('Самовывоз', 'Өзі алып кету')}</span>}
                         {o.scheduled_for && <span style={{ padding: '4px 10px', borderRadius: 10, background: '#FFF1E0', color: '#C24D00', fontSize: 12, fontWeight: 800 }}>{lang === 'kk' ? `${timeHML(o.scheduled_for, locale)} уақытына` : `Ко времени ${timeHML(o.scheduled_for, locale)}`}</span>}
                       </div>
                       <div style={{ marginTop: 12, fontSize: 14, fontWeight: 700 }}>
@@ -200,7 +228,17 @@ function Kitchen() {
                       <div style={{ marginTop: 10, fontSize: 12, color: '#6B6258', fontWeight: 700, lineHeight: 1.5 }}>
                         {[o.accepted_at && `${t('принят', 'қабылданды')} ${timeHML(o.accepted_at, locale)}`, o.preparing_at && `${t('готовится', 'дайындалуда')} ${timeHML(o.preparing_at, locale)}`, o.ready_at && `${t('готов', 'дайын')} ${timeHML(o.ready_at, locale)}`, o.picked_up_at && `${t('забран', 'алынды')} ${timeHML(o.picked_up_at, locale)}`, o.delivered_at && `${t('доставлен', 'жеткізілді')} ${timeHML(o.delivered_at, locale)}`].filter(Boolean).join(' · ')}
                       </div>
-                      <div style={{ fontSize: 13, fontWeight: 800, marginTop: 8 }}>{fmt(o.total_kzt)} · {o.payment_method === 'CASH' ? t('оплата при получении', 'алғанда төлеу') : o.payment_method === 'KASPI_QR' ? 'Kaspi QR' : t('онлайн', 'онлайн')}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span>{fmt(o.total_kzt)}</span>
+                        {isOff ? <span style={{ color: '#2E8B3F' }}>✓ {t('оплачено на кассе', 'кассада төленді')}</span>
+                          : o.payment_method === 'CASH' ? <span style={{ color: '#C24D00' }}>{t('оплата при получении', 'алғанда төленеді')}</span>
+                            : <span style={{ color: '#2E8B3F' }}>✓ Kaspi {t('оплачено', 'төленді')}</span>}
+                      </div>
+                      {o.cancel_requested_at && (
+                        <div role="status" style={{ marginTop: 8, background: '#FDECEA', color: '#B3261E', borderRadius: 12, padding: '8px 12px', fontSize: 13, fontWeight: 800, lineHeight: 1.35 }}>
+                          {t('Запрос на отмену отправлен администратору', 'Бас тарту сұрауы әкімшіге жіберілді')}{o.cancel_request_reason ? `: ${o.cancel_request_reason}` : ''}
+                        </div>
+                      )}
                       <div style={{ flex: 1 }} />
                       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
                         {nx && (
@@ -213,9 +251,9 @@ function Kitchen() {
                           <button className="btn" disabled={busy === o.id} onClick={() => askRelease(o)}
                             style={{ flex: 1, height: 56, borderRadius: 18, background: '#F3EADF', color: '#141210', fontWeight: 800, fontSize: 14 }}>{t('Снять курьера', 'Курьерді алып тастау')}</button>
                         )}
-                        {canCancel && (
-                          <button className="btn" disabled={busy === o.id} onClick={() => askCancel(o)} aria-label={t('Отменить', 'Бас тарту')}
-                            style={{ width: 56, height: 56, borderRadius: 18, background: '#F3EADF', color: '#B3261E', fontWeight: 800, fontSize: 18 }}>✕</button>
+                        {canAskCancel && (
+                          <button className="btn" disabled={busy === o.id} onClick={() => askCancel(o)} aria-label={t('Сообщить о проблеме / запросить отмену', 'Мәселе туралы хабарлау / бас тартуды сұрау')} title={t('Запросить отмену у администратора', 'Әкімшіден бас тартуды сұрау')}
+                            style={{ width: 56, height: 56, borderRadius: 18, background: '#F3EADF', color: '#B3261E', fontWeight: 800, fontSize: 20 }}>⚠</button>
                         )}
                       </div>
                     </article>
@@ -231,7 +269,7 @@ function Kitchen() {
           <div role="dialog" aria-modal="true" aria-labelledby="kdlg-title" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') setDialog(null); }}
             style={{ background: '#fff', borderRadius: 24, padding: 22, width: 'min(100%, 420px)', boxShadow: '0 20px 50px rgba(0,0,0,.3)' }}>
             <div id="kdlg-title" className="disp" style={{ fontSize: 18, fontWeight: 800 }}>
-              {dialog.kind === 'release' ? t(`Снять курьера с #TB-${dialog.order.order_no}?`, `#TB-${dialog.order.order_no} тапсырысынан курьерді алып тастау керек пе?`) : t(`Отменить заказ #TB-${dialog.order.order_no}?`, `#TB-${dialog.order.order_no} тапсырысын болдырмау керек пе?`)}
+              {dialog.kind === 'release' ? t(`Снять курьера с #TB-${dialog.order.order_no}?`, `#TB-${dialog.order.order_no} тапсырысынан курьерді алып тастау керек пе?`) : t(`Запросить отмену #TB-${dialog.order.order_no}?`, `#TB-${dialog.order.order_no} бас тартуын сұрау керек пе?`)}
             </div>
             {dialog.kind === 'release' ? (
               <>
@@ -242,17 +280,24 @@ function Kitchen() {
                   style={{ marginTop: 6, width: '100%', boxSizing: 'border-box', minHeight: 48, padding: '0 14px', borderRadius: 14, border: '2px solid #E5DACB', fontSize: 15, fontWeight: 700, fontFamily: 'inherit' }} />
               </>
             ) : (
-              <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 700, marginTop: 6 }}>{t('Отмену заказа нельзя вернуть.', 'Тапсырысты болдырмауды қайтару мүмкін емес.')}</div>
+              <>
+                <div style={{ fontSize: 13, color: '#6B6258', fontWeight: 700, marginTop: 6, lineHeight: 1.4 }}>{t('Кухня сама не отменяет заказы. Администратор или модератор получит запрос и решит.', 'Асхана тапсырысты өзі бас тартпайды. Әкімші немесе модератор сұрауды алып, шешеді.')}</div>
+                <label htmlFor="kdlg-reason" style={{ display: 'block', fontSize: 13, fontWeight: 800, marginTop: 14 }}>{t('Причина', 'Себебі')}</label>
+                <input id="kdlg-reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmDialog(); }}
+                  placeholder={t('Например: закончилось мясо', 'Мысалы: ет таусылды')} maxLength={300}
+                  style={{ marginTop: 6, width: '100%', boxSizing: 'border-box', minHeight: 48, padding: '0 14px', borderRadius: 14, border: '2px solid #E5DACB', fontSize: 15, fontWeight: 700, fontFamily: 'inherit' }} />
+              </>
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
               <button className="btn" onClick={() => setDialog(null)} style={{ flex: 1, minHeight: 52, borderRadius: 18, background: '#F3EADF', color: '#141210', fontWeight: 800, fontSize: 14 }}>{t('Назад', 'Артқа')}</button>
               <button className="btn" onClick={confirmDialog} style={{ flex: 1, minHeight: 52, borderRadius: 18, background: dialog.kind === 'cancel' ? '#B3261E' : '#FF6A0A', color: '#fff', fontWeight: 800, fontSize: 14 }}>
-                {dialog.kind === 'release' ? t('Снять курьера', 'Курьерді алып тастау') : t('Отменить заказ', 'Тапсырысты болдырмау')}
+                {dialog.kind === 'release' ? t('Снять курьера', 'Курьерді алып тастау') : t('Отправить запрос', 'Сұрауды жіберу')}
               </button>
             </div>
           </div>
         </div>
       )}
+      {offline && branchId && <OfflineOrder branchId={branchId} onClose={() => setOffline(false)} onCreated={() => { setSrc('all'); setCol('accepted'); reload(); }} />}
       {stopList && branchId && <StopList branchId={branchId} onClose={() => setStopList(false)} />}
     </div>
   );

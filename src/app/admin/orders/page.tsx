@@ -8,6 +8,8 @@ import { type LiveCourier, useLiveCouriers } from '@/features/admin/couriers';
 import { ALL_STATUSES, addDays, almatyDayStart, errText, nextStatuses } from '@/features/admin/transitions';
 import { meatName } from '@/features/catalog/hooks';
 import { STATUS_COLOR, STATUS_LABEL, dateShort, timeHM } from '@/features/orders/status';
+import { PAY_STATE_LABEL } from '@/features/payments/settings';
+import Link from 'next/link';
 import { fmt } from '@/lib/money';
 import { formatPhone } from '@/lib/phone';
 import { sb } from '@/lib/supabase/client';
@@ -45,6 +47,8 @@ function Orders() {
   const [status, setStatus] = useState<'all' | 'active' | OrderStatus>('all');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [src, setSrc] = useState<'all' | 'ONLINE' | 'OFFLINE'>('all');
+  const [onlyCancel, setOnlyCancel] = useState(false);
   const [q, setQ] = useState(sp.get('q') ?? '');
   const [query, setQuery] = useState(sp.get('q') ?? '');
   const [page, setPage] = useState(0);
@@ -63,6 +67,8 @@ function Orders() {
     (async () => {
     let req = sb().from('orders').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
     if (br !== 'all') req = req.eq('branch_id', br);
+    if (src !== 'all') req = req.eq('source', src);
+    if (onlyCancel) req = req.not('cancel_requested_at', 'is', null);
     if (status === 'active') req = req.in('status', ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COURIER_ASSIGNED', 'PICKED_UP', 'ON_THE_WAY']);
     else if (status !== 'all') req = req.eq('status', status);
     if (from) req = req.gte('created_at', almatyDayStart(from));
@@ -82,7 +88,7 @@ function Orders() {
     setTotal(count ?? 0);
     })();
     return () => { alive = false; };
-  }, [br, status, from, to, query, page, reload]);
+  }, [br, status, from, to, src, onlyCancel, query, page, reload]);
 
   // live refresh when any order changes
   useEffect(() => {
@@ -109,9 +115,15 @@ function Orders() {
           <option value="active">Активные</option>
           {ALL_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
+        <select className="field" value={src} onChange={(e) => reset(setSrc)(e.target.value as typeof src)} aria-label="Источник" style={{ maxWidth: 190, border: 0 }}>
+          <option value="all">Онлайн + офлайн</option>
+          <option value="ONLINE">Только онлайн</option>
+          <option value="OFFLINE">Только офлайн (зал/касса)</option>
+        </select>
+        <button className="btn" aria-pressed={onlyCancel} onClick={() => reset(setOnlyCancel)(!onlyCancel)} style={{ minHeight: 48, padding: '0 14px', borderRadius: 14, background: onlyCancel ? '#B3261E' : '#fff', color: onlyCancel ? '#fff' : '#141210', fontWeight: 800, fontSize: 13 }}>Запросы отмены</button>
         <input className="field" type="date" value={from} onChange={(e) => reset(setFrom)(e.target.value)} aria-label="С даты" style={{ maxWidth: 170, border: 0 }} />
         <input className="field" type="date" value={to} onChange={(e) => reset(setTo)(e.target.value)} aria-label="По дату" style={{ maxWidth: 170, border: 0 }} />
-        {(q || status !== 'all' || from || to) && <button className="btn" onClick={() => { setQ(''); setStatus('all'); setFrom(''); setTo(''); setPage(0); }} style={{ minHeight: 48, padding: '0 14px', borderRadius: 14, background: '#fff', fontWeight: 800, fontSize: 13 }}>Сбросить</button>}
+        {(q || status !== 'all' || from || to || src !== 'all' || onlyCancel) && <button className="btn" onClick={() => { setQ(''); setStatus('all'); setFrom(''); setTo(''); setSrc('all'); setOnlyCancel(false); setPage(0); }} style={{ minHeight: 48, padding: '0 14px', borderRadius: 14, background: '#fff', fontWeight: 800, fontSize: 13 }}>Сбросить</button>}
       </div>
 
       <TableWrap>
@@ -124,11 +136,11 @@ function Orders() {
               <td><b>#TB-{o.order_no}</b></td>
               <td style={{ whiteSpace: 'nowrap' }}>{dateShort(o.created_at)} {timeHM(o.created_at)}</td>
               <td>{brName(o.branch_id)}</td>
-              <td>{o.mode === 'DELIVERY' ? 'Доставка' : 'Самовывоз'}</td>
+              <td>{o.source === 'OFFLINE' ? <Badge color="#0B6EE5">Зал / касса</Badge> : o.mode === 'DELIVERY' ? 'Доставка' : 'Самовывоз'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{o.customer_name ?? ''} {formatPhone(o.contact_phone)}</td>
-              <td><Badge color={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge></td>
+              <td style={{ whiteSpace: 'nowrap' }}><Badge color={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge>{o.cancel_requested_at && <span title={o.cancel_request_reason ?? ''} style={{ marginLeft: 6, color: '#B3261E', fontWeight: 800, fontSize: 12 }}>⚠ отмена?</span>}</td>
               <td style={{ whiteSpace: 'nowrap', fontWeight: 700, color: courierCell(o) === 'ищем' ? '#C24D00' : undefined }}>{courierCell(o)}</td>
-              <td>{o.payment_method === 'CASH' ? 'Наличные' : o.payment_method === 'KASPI_QR' ? 'Kaspi QR' : 'Онлайн'}</td>
+              <td style={{ whiteSpace: 'nowrap' }}>{o.payment_method === 'CASH' ? 'Наличные' : o.payment_method === 'KASPI_QR' ? 'Kaspi' : o.source === 'OFFLINE' ? 'Карта (касса)' : 'Онлайн'}{o.payment_state !== 'NOT_REQUIRED' && <div style={{ fontSize: 11, fontWeight: 800, color: o.payment_state === 'CONFIRMED' ? '#2E8B3F' : o.payment_state === 'REJECTED' ? '#B3261E' : '#C24D00' }}>{PAY_STATE_LABEL[o.payment_state][0]}</div>}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{fmt(o.total_kzt)}</td>
             </tr>
           ))}
@@ -171,12 +183,24 @@ function OrderDrawer({ id, onClose, brName, couriers, onChanged }: { id: string;
 
   const move = async (to: OrderStatus) => {
     if (!o) return;
+    if (to === 'CANCELLED' && note.trim().length < 3) return toast('Укажите причину отмены в поле комментария');
     if (to === 'CANCELLED' && !confirm(`Отменить заказ #TB-${o.order_no}?`)) return;
     setBusy(true);
     const { error } = await sb().rpc('transition_order', { p_order: o.id, p_to: to, p_note: note.trim() || null });
     setBusy(false);
     if (error) return toast(errText(error.message));
     toast(`Статус: ${STATUS_LABEL[to]}`);
+    setNote('');
+    load(); onChanged();
+  };
+  const resolve = async (approve: boolean) => {
+    if (!o) return;
+    if (approve && !confirm(`Отменить заказ #TB-${o.order_no} по запросу кухни?`)) return;
+    setBusy(true);
+    const { error } = await sb().rpc('resolve_cancel_request', { p_order: o.id, p_approve: approve, p_note: note.trim() || null });
+    setBusy(false);
+    if (error) return toast(errText(error.message));
+    toast(approve ? 'Заказ отменён' : 'Запрос отклонён');
     setNote('');
     load(); onChanged();
   };
@@ -195,6 +219,18 @@ function OrderDrawer({ id, onClose, brName, couriers, onChanged }: { id: string;
             {o.note && <div style={{ fontSize: 13, marginTop: 6, background: '#FFF1E0', borderRadius: 12, padding: '8px 12px' }}><b>Комментарий:</b> {o.note}</div>}
             {o.scheduled_for && <div style={{ fontSize: 13, marginTop: 6, fontWeight: 800, color: '#C24D00' }}>Ко времени: {dateShort(o.scheduled_for)} {timeHM(o.scheduled_for)}</div>}
           </Panel>
+
+          {o.cancel_requested_at && (
+            <Panel style={{ marginTop: 12, border: '2px solid #B3261E' }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#B3261E' }}>Кухня просит отменить заказ</div>
+              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 6 }}>Причина: {o.cancel_request_reason}</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <button className="btn" disabled={busy} onClick={() => resolve(true)} style={{ minHeight: 44, padding: '0 16px', borderRadius: 14, background: '#B3261E', color: '#fff', fontWeight: 800, fontSize: 13 }}>Отменить заказ</button>
+                <button className="btn" disabled={busy} onClick={() => resolve(false)} style={{ minHeight: 44, padding: '0 16px', borderRadius: 14, background: '#F3EADF', fontWeight: 800, fontSize: 13 }}>Отклонить запрос</button>
+              </div>
+              <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 6 }}>Комментарий ниже (в «Действиях») попадёт в историю.</div>
+            </Panel>
+          )}
 
           <CourierSection order={o} couriers={couriers} onChanged={() => { load(); onChanged(); }} />
 
@@ -215,10 +251,13 @@ function OrderDrawer({ id, onClose, brName, couriers, onChanged }: { id: string;
           </Panel>
 
           <Panel style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Оплата</div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>Оплата{o.source === 'OFFLINE' ? ' · принята на кассе' : ''}</div>
+            {o.payment_state !== 'NOT_REQUIRED' && o.payment_state !== 'CONFIRMED' && o.status === 'PENDING' && (
+              <div style={{ fontSize: 13, fontWeight: 800, marginTop: 6 }}><span style={{ color: '#C24D00' }}>{PAY_STATE_LABEL[o.payment_state][0]}</span> · <Link href="/admin/payments" style={{ color: '#0B6EE5' }}>перейти к проверке →</Link></div>
+            )}
             {pays.map((p) => (
               <div key={p.id} style={{ fontSize: 13, fontWeight: 700, marginTop: 6 }}>
-                {p.method} · {fmt(p.amount_kzt)} · <span style={{ color: p.status === 'PAID' ? '#2E8B3F' : '#C24D00' }}>{p.status === 'PAID' ? 'оплачено' : p.status === 'PENDING' ? 'ожидает оплаты' : p.status}</span>
+                {p.method} · {fmt(p.amount_kzt)} · <span style={{ color: p.status === 'PAID' ? '#2E8B3F' : '#C24D00' }}>{p.status === 'PAID' ? 'оплачено' : p.status === 'PENDING' ? 'ожидает оплаты' : p.status === 'REFUNDED' ? 'возвращено' : p.status === 'FAILED' ? 'не оплачено' : p.status}</span>
                 <span style={{ color: '#6B6258' }}> · провайдер: {p.provider}</span>
               </div>
             ))}

@@ -34,15 +34,17 @@ export function addDays(d: string, n: number): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).format(t);
 }
 
+const ERR: Record<string, string> = {
+  FORBIDDEN: 'Нет доступа', INVALID_TRANSITION: 'Статус уже изменился — обновите', BRANCH_REQUIRED: 'Выберите филиал',
+  BAD_ROLE: 'Недопустимая роль', CANNOT_REVOKE_SELF: 'Нельзя снять права администратора с себя', 'duplicate key': 'Такая запись уже существует',
+  PAYMENT_NOT_CONFIRMED: 'Оплата заказа ещё не подтверждена', REASON_REQUIRED: 'Укажите причину (минимум 3 символа)',
+  INVALID_PAYMENT_STATE: 'Статус оплаты уже изменился — обновите', NO_REQUEST: 'Запроса на отмену нет',
+  HAS_ORDERS: 'У филиала есть заказы — удалить нельзя, скройте его', BAD_BRANCH: 'Проверьте название, адрес и координаты',
+  NOT_FOUND: 'Запись не найдена', check: 'Проверьте значения полей (ссылка должна начинаться с https://, телефон — +7XXXXXXXXXX)',
+};
+
 export function errText(message: string | undefined): string {
   if (!message) return 'Ошибка';
-  for (const k of ['FORBIDDEN', 'INVALID_TRANSITION', 'BRANCH_REQUIRED', 'BAD_ROLE', 'CANNOT_REVOKE_SELF', 'duplicate key']) {
-    if (message.includes(k)) {
-      return ({
-        FORBIDDEN: 'Нет доступа', INVALID_TRANSITION: 'Статус уже изменился — обновите', BRANCH_REQUIRED: 'Выберите филиал',
-        BAD_ROLE: 'Недопустимая роль', CANNOT_REVOKE_SELF: 'Нельзя снять права администратора с себя', 'duplicate key': 'Такая запись уже существует',
-      } as Record<string, string>)[k];
-    }
-  }
+  for (const k of Object.keys(ERR)) if (message.includes(k)) return ERR[k];
   return 'Ошибка: ' + message.slice(0, 120);
 }

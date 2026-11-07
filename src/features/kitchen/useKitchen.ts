@@ -45,6 +45,8 @@ export function useBranchOrders(branchId: string | null, muted: boolean) {
   const mutedRef = useRef(muted);
   useEffect(() => { mutedRef.current = muted; }, [muted]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ids already shown: an online order paid via receipt appears later as an UPDATE (payment confirmed) and must beep too
+  const known = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!branchId) return;
@@ -64,6 +66,7 @@ export function useBranchOrders(branchId: string | null, muted: boolean) {
     if (activeRes.error || doneRes.error) return;
     const byId = new Map<string, OrderRow>();
     for (const o of [...((activeRes.data as OrderRow[]) ?? []), ...((doneRes.data as OrderRow[]) ?? [])]) byId.set(o.id, o);
+    known.current = new Set(byId.keys());
     const rows = Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
     const ids = Array.from(new Set(rows.map((o) => o.courier_id).filter((x): x is string => !!x)));
     if (!ids.length) { setCouriers({}); setData({ b: branchId, rows }); return; }
@@ -82,11 +85,15 @@ export function useBranchOrders(branchId: string | null, muted: boolean) {
     if (!branchId) return;
     const first = setTimeout(load, 0);
     const ch = sb().channel('kitchen-' + branchId)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `branch_id=eq.${branchId}` }, () => {
-        if (!mutedRef.current) beep();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `branch_id=eq.${branchId}` }, (p) => {
+        if (!mutedRef.current && (p.new as { source?: string }).source !== 'OFFLINE') beep();
         scheduleLoad();
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `branch_id=eq.${branchId}` }, scheduleLoad)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `branch_id=eq.${branchId}` }, (p) => {
+        const n = p.new as { id: string; status: string };
+        if (n.status === 'PENDING' && !known.current.has(n.id) && !mutedRef.current) beep();
+        scheduleLoad();
+      })
       .subscribe();
     const onVis = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVis);

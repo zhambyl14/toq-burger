@@ -10,8 +10,9 @@ create schema auth; create schema storage; create schema extensions;
 create table auth.users (id uuid primary key default gen_random_uuid(), raw_app_meta_data jsonb default '{}', raw_user_meta_data jsonb default '{}');
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 grant usage on schema auth to anon, authenticated, service_role; grant execute on function auth.uid() to anon, authenticated, service_role;
-create table storage.buckets (id text primary key, name text, public boolean);
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text);
+create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+create function storage.foldername(name text) returns text[] language sql immutable as $$ select string_to_array(name, '/') $$;
 alter table storage.objects enable row level security;
 create publication supabase_realtime;
 grant usage on schema public to anon, authenticated, service_role;
@@ -101,7 +102,7 @@ await expect('courier pickup -> on the way -> delivered', async () => { await tr
 await expect('gps rate-limited (5s)', () => as(courier, 'authenticated', `select report_courier_location(43.22, 76.9) ok`), (r) => r.rows[0].ok === false);
 await expect('delivered + history recorded', async () => { await tr(courier, 'DELIVERED'); return db.query(`select count(*)::int n from order_status_history where order_id=$1`, [order]); }, (r) => r.rows[0].n === 8);
 await expect('cannot cancel delivered', () => tr(admin, 'CANCELLED'), err('INVALID_TRANSITION'));
-await expect('payment not marked paid', () => db.query(`select status from payments where order_id=$1`, [order]), (r) => r.rows[0].status === 'PENDING');
+await expect('cash payment is marked paid only after delivery', () => db.query(`select status from payments where order_id=$1`, [order]), (r) => r.rows[0].status === 'PAID');
 
 // OTP
 const sr = (sql, p) => as(null, 'service_role', sql, p);
@@ -203,6 +204,79 @@ await expect('pick up allowed from READY (courier arrives while it is finished)'
 await expect('courier cannot pick up before the order is READY', () => as(courier2, 'authenticated', `select transition_order('${dBatch}','PICKED_UP')`), err('INVALID_TRANSITION'));
 await expect('dispatch settings editable by admin only', async () => { await as(tAdmin, 'authenticated', `update dispatch_settings set ready_window_min = 4 where id = 1`); return as(moder, 'authenticated', `update dispatch_settings set ready_window_min = 9 where id = 1`); }, (r, e) => !!e || r.affectedRows === 0);
 
+// ===================== payments / offline / cancel requests / branches (migration 19) =====================
+const placeKaspi = (uid, key) => as(uid, 'authenticated',
+  `select place_order($1,'DELIVERY',$2,'KASPI_QR','+77474005349', null, 43.2118, 76.9021, 'Тест адрес', null,null,null,null,null,null,null,null) as id`,
+  [key, JSON.stringify([{ product_id: classic, meat: 'beef', quantity: 1 }])]);
+
+await expect('payment settings readable by anyone', () => as(null, 'anon', `select cash_enabled, kaspi_enabled from payment_settings`), (r) => r.rows[0].cash_enabled === true && r.rows[0].kaspi_enabled === false);
+await expect('Kaspi order rejected while Kaspi is disabled', () => placeKaspi(cust, 'key-pay-0001'), err('PAYMENT_UNAVAILABLE'));
+await expect('customer cannot edit payment settings', async () => { await as(cust, 'authenticated', `update payment_settings set kaspi_enabled = true`); return db.query(`select kaspi_enabled from payment_settings`); }, (r) => r.rows[0].kaspi_enabled === false);
+await expect('kaspi_pay_url must be https', () => as(tAdmin, 'authenticated', `update payment_settings set kaspi_pay_url = 'javascript:alert(1)'`), err('payment_settings_kaspi_pay_url_check'));
+await expect('admin configures Kaspi', async () => { await as(tAdmin, 'authenticated', `update payment_settings set kaspi_enabled = true, kaspi_phone = '+77001112233', kaspi_pay_url = 'https://pay.kaspi.kz/pay/abc', kaspi_recipient = 'TOK BURGER'`); return db.query(`select kaspi_enabled from payment_settings`); }, (r) => r.rows[0].kaspi_enabled === true);
+await db.exec(`delete from branch_working_hours; insert into branch_working_hours(branch_id, day_of_week, open_time, close_time) select b.id, d, '00:00', '00:00' from branches b, generate_series(0,6) d`);
+let kaspiOrder;
+await expect('Kaspi order waits for payment', async () => { kaspiOrder = (await placeKaspi(cust, 'key-pay-0002')).rows[0].id; return db.query(`select payment_state, status from orders where id=$1`, [kaspiOrder]); }, (r) => r.rows[0].payment_state === 'AWAITING_RECEIPT' && r.rows[0].status === 'PENDING');
+await expect('kitchen cannot see an unpaid online order', () => as(tKitchen, 'authenticated', `select count(*)::int n from orders where id='${kaspiOrder}'`), (r) => r.rows[0].n === 0);
+await expect('kitchen cannot see its items either', () => as(tKitchen, 'authenticated', `select count(*)::int n from order_items where order_id='${kaspiOrder}'`), (r) => r.rows[0].n === 0);
+await expect('nobody can accept an unpaid order', () => as(admin, 'authenticated', `select transition_order('${kaspiOrder}','ACCEPTED')`), err('PAYMENT_NOT_CONFIRMED'));
+await expect('receipt path must be inside own folder', () => as(cust, 'authenticated', `select submit_payment_receipt('${kaspiOrder}','${cust2}/x.jpg')`), err('BAD_RECEIPT_PATH'));
+await expect('other customer cannot upload a receipt', () => as(cust2, 'authenticated', `select submit_payment_receipt('${kaspiOrder}','${cust2}/x.jpg')`), err('NOT_FOUND'));
+await expect('customer uploads receipt => REVIEW', async () => { await as(cust, 'authenticated', `select submit_payment_receipt('${kaspiOrder}','${cust}/r1.jpg')`); return db.query(`select payment_state from orders where id=$1`, [kaspiOrder]); }, (r) => r.rows[0].payment_state === 'REVIEW');
+await expect('kitchen still cannot see it during review', () => as(tKitchen, 'authenticated', `select count(*)::int n from orders where id='${kaspiOrder}'`), (r) => r.rows[0].n === 0);
+await expect('kitchen cannot review payments', () => as(tKitchen, 'authenticated', `select review_payment('${kaspiOrder}', true)`), err('FORBIDDEN'));
+await expect('customer cannot review own payment', () => as(cust, 'authenticated', `select review_payment('${kaspiOrder}', true)`), err('FORBIDDEN'));
+await expect('reject needs a reason', () => as(moder, 'authenticated', `select review_payment('${kaspiOrder}', false)`), err('REASON_REQUIRED'));
+await expect('moderator rejects receipt', async () => { await as(moder, 'authenticated', `select review_payment('${kaspiOrder}', false, 'Сумма не совпадает')`); return db.query(`select o.payment_state, p.status, p.reject_reason from orders o join payments p on p.order_id=o.id where o.id=$1`, [kaspiOrder]); }, (r) => r.rows[0].payment_state === 'REJECTED' && r.rows[0].status === 'FAILED');
+await expect('customer is notified about rejection', () => db.query(`select count(*)::int n from notifications where order_id=$1 and event='payment.rejected'`, [kaspiOrder]), (r) => r.rows[0].n === 1);
+await expect('customer re-uploads after rejection', async () => { await as(cust, 'authenticated', `select submit_payment_receipt('${kaspiOrder}','${cust}/r2.jpg')`); return db.query(`select payment_state from orders where id=$1`, [kaspiOrder]); }, (r) => r.rows[0].payment_state === 'REVIEW');
+await expect('admin confirms payment => kitchen sees the order', async () => { await as(tAdmin, 'authenticated', `select review_payment('${kaspiOrder}', true)`); return as(tKitchen, 'authenticated', `select payment_state from orders where id='${kaspiOrder}'`); }, (r) => r.rows[0]?.payment_state === 'CONFIRMED');
+await expect('payment is PAID with reviewer recorded', () => db.query(`select status, reviewed_by from payments where order_id=$1`, [kaspiOrder]), (r) => r.rows[0].status === 'PAID' && !!r.rows[0].reviewed_by);
+await expect('kitchen accepts confirmed order', () => as(tKitchen, 'authenticated', `select transition_order('${kaspiOrder}','ACCEPTED') s`), (r) => r.rows[0].s === 'ACCEPTED');
+await expect('confirmed payment cannot be reviewed again', () => as(tAdmin, 'authenticated', `select review_payment('${kaspiOrder}', false, 'ещё раз')`), err('INVALID_PAYMENT_STATE'));
+
+// kitchen cannot cancel; it files a request
+await expect('KITCHEN cannot cancel an order', () => as(tKitchen, 'authenticated', `select transition_order('${kaspiOrder}','CANCELLED')`), err('FORBIDDEN'));
+await expect('cancel request needs a reason', () => as(tKitchen, 'authenticated', `select request_order_cancel('${kaspiOrder}', 'x')`), err('REASON_REQUIRED'));
+await expect('kitchen files a cancel request', async () => { await as(tKitchen, 'authenticated', `select request_order_cancel('${kaspiOrder}', 'Нет булочек')`); return db.query(`select cancel_request_reason from orders where id=$1`, [kaspiOrder]); }, (r) => r.rows[0].cancel_request_reason === 'Нет булочек');
+await expect('second request is refused', () => as(tKitchen, 'authenticated', `select request_order_cancel('${kaspiOrder}', 'Нет булочек')`), err('ALREADY_REQUESTED'));
+await expect('customer cannot file a cancel request', () => as(cust, 'authenticated', `select request_order_cancel('${kaspiOrder}', 'хочу отменить')`), err('FORBIDDEN'));
+await expect('kitchen cannot resolve cancel requests', () => as(tKitchen, 'authenticated', `select resolve_cancel_request('${kaspiOrder}', true)`), err('FORBIDDEN'));
+await expect('moderator dismisses the request', async () => { await as(moder, 'authenticated', `select resolve_cancel_request('${kaspiOrder}', false, 'найдём')`); return db.query(`select cancel_requested_at, status from orders where id=$1`, [kaspiOrder]); }, (r) => r.rows[0].cancel_requested_at === null && r.rows[0].status === 'ACCEPTED');
+await expect('admin approves a new request => CANCELLED + refund flagged', async () => {
+  await as(tKitchen, 'authenticated', `select request_order_cancel('${kaspiOrder}', 'Закончилось мясо')`);
+  await as(tAdmin, 'authenticated', `select resolve_cancel_request('${kaspiOrder}', true)`);
+  return db.query(`select o.status, o.cancel_requested_at, (select count(*)::int from order_status_history h where h.order_id=o.id and h.note like '%нужен возврат%') n from orders o where o.id=$1`, [kaspiOrder]);
+}, (r) => r.rows[0].status === 'CANCELLED' && r.rows[0].cancel_requested_at === null && r.rows[0].n === 1);
+await expect('moderator marks refund done', async () => { await as(moder, 'authenticated', `select mark_payment_refunded('${kaspiOrder}')`); return db.query(`select status from payments where order_id=$1`, [kaspiOrder]); }, (r) => r.rows[0].status === 'REFUNDED');
+await expect('refund cannot be repeated', () => as(moder, 'authenticated', `select mark_payment_refunded('${kaspiOrder}')`), err('INVALID_PAYMENT_STATE'));
+
+// unpaid orders expire
+await expect('unpaid Kaspi order expires after the timeout; orders under review do not', async () => {
+  const a = (await placeKaspi(cust, 'key-pay-0003')).rows[0].id, b = (await placeKaspi(cust, 'key-pay-0004')).rows[0].id;
+  await as(cust, 'authenticated', `select submit_payment_receipt('${b}','${cust}/r3.jpg')`);
+  await db.exec(`update orders set created_at = now() - interval '2 hours' where id in ('${a}','${b}')`);
+  await as(cust, 'authenticated', `select expire_unpaid_orders()`);
+  return db.query(`select (select status from orders where id='${a}') sa, (select status from orders where id='${b}') sb`);
+}, (r) => r.rows[0].sa === 'CANCELLED' && r.rows[0].sb === 'PENDING');
+
+// offline orders
+const offItems = [{ product_id: classic, meat: 'beef', quantity: 2 }];
+let offOrder;
+await expect('kitchen creates an offline order (server price)', async () => { offOrder = (await as(tKitchen, 'authenticated', `select create_offline_order('${zhar}', $1::jsonb, 'CASH', 'Стол 3', null, 'без лука') id`, [JSON.stringify(offItems)])).rows[0].id; return db.query(`select source, total_kzt, status, user_id, payment_state from orders where id=$1`, [offOrder]); },
+  (r) => r.rows[0].source === 'OFFLINE' && r.rows[0].total_kzt === 4580 && r.rows[0].status === 'ACCEPTED' && r.rows[0].user_id === null);
+await expect('offline order is paid at the counter', () => db.query(`select status, provider from payments where order_id=$1`, [offOrder]), (r) => r.rows[0].status === 'PAID' && r.rows[0].provider === 'offline');
+await expect('kitchen sees its offline order', () => as(tKitchen, 'authenticated', `select count(*)::int n from orders where id='${offOrder}'`), (r) => r.rows[0].n === 1);
+await expect('customer cannot create offline orders', () => as(cust, 'authenticated', `select create_offline_order('${zhar}', $1::jsonb)`, [JSON.stringify(offItems)]), err('FORBIDDEN'));
+await expect('offline order: bad phone rejected', () => as(tKitchen, 'authenticated', `select create_offline_order('${zhar}', $1::jsonb, 'CASH', null, '123')`, [JSON.stringify(offItems)]), err('BAD_PHONE'));
+await expect('offline order walks to DELIVERED', async () => { for (const s of ['PREPARING', 'READY', 'DELIVERED']) await as(tKitchen, 'authenticated', `select transition_order('${offOrder}','${s}')`); return db.query(`select status from orders where id=$1`, [offOrder]); }, (r) => r.rows[0].status === 'DELIVERED');
+
+// branches
+let newBranch;
+await expect('admin creates a branch (closed to orders, default hours)', async () => { newBranch = (await as(tAdmin, 'authenticated', `select admin_create_branch('Тест филиал', 'Test Fil', 'Алматы, ул. Тестовая 1') id`)).rows[0].id; return db.query(`select accepts_orders, coords_verified, (select count(*)::int from branch_working_hours where branch_id=b.id) h from branches b where id=$1`, [newBranch]); }, (r) => r.rows[0].accepts_orders === false && r.rows[0].coords_verified === false && r.rows[0].h === 14);
+await expect('moderator cannot create branches', () => as(moder, 'authenticated', `select admin_create_branch('Тест', 'Tst', 'Алматы, ул. Тестовая 2')`), err('FORBIDDEN'));
+await expect('branch with orders cannot be deleted', () => as(tAdmin, 'authenticated', `select admin_delete_branch('${zhar}')`), err('HAS_ORDERS'));
+await expect('empty branch can be deleted', async () => { await as(tAdmin, 'authenticated', `select admin_delete_branch('${newBranch}')`); return db.query(`select count(*)::int n from branches where id=$1`, [newBranch]); }, (r) => r.rows[0].n === 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
