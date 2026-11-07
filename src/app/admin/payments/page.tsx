@@ -33,6 +33,7 @@ export default function AdminPayments() {
       <PageHead title="Оплата" />
       <Queue />
       <Refunds />
+      {isAdmin && <TestMode />}
       {isAdmin ? <Settings /> : <Panel style={{ marginTop: 20, fontWeight: 700, color: '#6B6258' }}>Настройки способов оплаты меняет только администратор.</Panel>}
     </>
   );
@@ -283,6 +284,34 @@ function Settings() {
 
       {err && <div role="alert" style={{ color: '#B3261E', fontWeight: 700, fontSize: 13, marginTop: 12 }}>{err}</div>}
       <button className="btn primary" disabled={busy} onClick={save} style={{ marginTop: 16, width: '100%', height: 52, borderRadius: 26 }}>{busy ? <Spinner /> : 'Сохранить настройки оплаты'}</button>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------------ login test mode (admin only)
+function TestMode() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    sb().from('payment_settings').select('test_mode').eq('id', 1).maybeSingle().then(({ data }) => setOn(!!data?.test_mode));
+  }, []);
+  const flip = async (v: boolean) => {
+    const { error } = await sb().from('payment_settings').update({ test_mode: v }).eq('id', 1);
+    if (error) return toast(errText(error.message));
+    setOn(v);
+    toast(v ? 'Тестовый режим ВКЛ: вход без кода' : 'Тестовый режим выключен: вход по коду WhatsApp');
+  };
+  return (
+    <Panel style={{ marginTop: 20, border: on ? '2px solid #C24D00' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Toggle on={!!on} disabled={on === null} onChange={flip} label="Тестовый режим входа" />
+        <div style={{ flex: 1 }}>
+          <b style={{ fontSize: 15 }}>Тестовый режим: вход клиентов без кода</b>
+          <div style={{ fontSize: 12, color: '#6B6258', fontWeight: 600, marginTop: 4, lineHeight: 1.4 }}>
+            Пока включено, клиент входит по любому номеру телефона без кода WhatsApp. Сотрудники (админ, модератор, кухня, курьер) всегда входят только по коду. Выключите режим перед запуском для реальных клиентов.
+          </div>
+        </div>
+        {on && <Badge color="#C24D00">ВКЛЮЧЁН</Badge>}
+      </div>
     </Panel>
   );
 }

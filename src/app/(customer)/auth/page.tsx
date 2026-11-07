@@ -76,6 +76,15 @@ function Auth() {
         if (j.error === 'COOLDOWN' && step === 'phone') { setStep('otp'); setLeft(j.retryAfter ?? 60); return; }
         return fail(j.error);
       }
+      if (j.direct && j.tokenHash) { // admin test mode: no code needed
+        const { error } = await sb().auth.verifyOtp({ token_hash: j.tokenHash, type: 'email' });
+        if (error) return fail('SESSION');
+        setStep('done');
+        const { data: roles } = await sb().rpc('my_roles');
+        const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : homeForRoles((roles as Role[]) ?? []);
+        setTimeout(() => router.replace(dest), 1100);
+        return;
+      }
       setDevCode(j.devCode ?? null);
       setCode('');
       setLeft(j.resendIn ?? 60);
