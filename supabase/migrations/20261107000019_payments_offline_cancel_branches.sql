@@ -7,22 +7,23 @@
 -- =====================================================================================
 alter table public.orders alter column user_id drop not null;
 alter table public.orders
-  add column source text not null default 'ONLINE' check (source in ('ONLINE','OFFLINE')),
-  add column payment_state text not null default 'NOT_REQUIRED'
+  add column if not exists source text not null default 'ONLINE' check (source in ('ONLINE','OFFLINE')),
+  add column if not exists payment_state text not null default 'NOT_REQUIRED'
     check (payment_state in ('NOT_REQUIRED','AWAITING_RECEIPT','REVIEW','CONFIRMED','REJECTED')),
-  add column placed_by uuid,
-  add column cancel_requested_at timestamptz,
-  add column cancel_requested_by uuid,
-  add column cancel_request_reason text,
-  add constraint orders_user_or_offline check (source = 'OFFLINE' or user_id is not null);
-create index orders_source_idx on public.orders(branch_id, source, created_at desc);
-create index orders_unpaid_idx on public.orders(payment_state) where payment_state in ('AWAITING_RECEIPT','REVIEW','REJECTED');
-create index orders_cancel_req_idx on public.orders(cancel_requested_at) where cancel_requested_at is not null;
+  add column if not exists placed_by uuid,
+  add column if not exists cancel_requested_at timestamptz,
+  add column if not exists cancel_requested_by uuid,
+  add column if not exists cancel_request_reason text;
+alter table public.orders drop constraint if exists orders_user_or_offline;
+alter table public.orders add constraint orders_user_or_offline check (source = 'OFFLINE' or user_id is not null);
+create index if not exists orders_source_idx on public.orders(branch_id, source, created_at desc);
+create index if not exists orders_unpaid_idx on public.orders(payment_state) where payment_state in ('AWAITING_RECEIPT','REVIEW','REJECTED');
+create index if not exists orders_cancel_req_idx on public.orders(cancel_requested_at) where cancel_requested_at is not null;
 
 -- =====================================================================================
 -- 2. payment settings (single row, managed by the admin)
 -- =====================================================================================
-create table public.payment_settings (
+create table if not exists public.payment_settings (
   id smallint primary key default 1 check (id = 1),
   cash_enabled boolean not null default true,
   cash_note text check (length(cash_note) <= 300),
@@ -38,18 +39,22 @@ create table public.payment_settings (
   updated_at timestamptz not null default now(),
   updated_by uuid
 );
-insert into public.payment_settings(id) values (1);
+insert into public.payment_settings(id) values (1) on conflict (id) do nothing;
 
 create or replace function public.payment_settings_touch() returns trigger
 language plpgsql set search_path = '' as $$
 begin new.updated_at := now(); new.updated_by := auth.uid(); return new; end $$;
+drop trigger if exists trg_payment_settings_touch on public.payment_settings;
 create trigger trg_payment_settings_touch before update on public.payment_settings
   for each row execute function public.payment_settings_touch();
+drop trigger if exists trg_audit_payment_settings on public.payment_settings;
 create trigger trg_audit_payment_settings after update on public.payment_settings
   for each row execute function public.audit_row();
 
 alter table public.payment_settings enable row level security;
+drop policy if exists payment_settings_read on public.payment_settings;
 create policy payment_settings_read on public.payment_settings for select to anon, authenticated using (true);
+drop policy if exists payment_settings_admin on public.payment_settings;
 create policy payment_settings_admin on public.payment_settings for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
 revoke all on public.payment_settings from anon, authenticated;
@@ -60,14 +65,14 @@ grant update on public.payment_settings to authenticated;
 -- 3. payments: receipt + review data
 -- =====================================================================================
 alter table public.payments
-  add column receipt_path text,
-  add column receipt_uploaded_at timestamptz,
-  add column attempts smallint not null default 0,
-  add column reviewed_by uuid,
-  add column reviewed_by_name text,
-  add column reviewed_at timestamptz,
-  add column reject_reason text;
-create unique index payments_one_per_order on public.payments(order_id);
+  add column if not exists receipt_path text,
+  add column if not exists receipt_uploaded_at timestamptz,
+  add column if not exists attempts smallint not null default 0,
+  add column if not exists reviewed_by uuid,
+  add column if not exists reviewed_by_name text,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists reject_reason text;
+create unique index if not exists payments_one_per_order on public.payments(order_id);
 
 -- Online orders: payment method must be enabled by the admin; Kaspi orders wait for a verified receipt.
 create or replace function public.orders_payment_gate() returns trigger
@@ -89,6 +94,7 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists trg_orders_payment_gate on public.orders;
 create trigger trg_orders_payment_gate before insert on public.orders
   for each row execute function public.orders_payment_gate();
 
@@ -98,6 +104,7 @@ begin
   if new.method = 'KASPI_QR' and new.provider = 'unconfigured' then new.provider := 'kaspi_manual'; end if;
   return new;
 end $$;
+drop trigger if exists trg_payments_defaults on public.payments;
 create trigger trg_payments_defaults before insert on public.payments
   for each row execute function public.payments_defaults();
 
@@ -112,7 +119,8 @@ language sql stable security definer set search_path = '' as $$
     or o.courier_id = auth.uid()))
 $$;
 
-drop policy orders_read on public.orders;
+drop policy if exists orders_read on public.orders;
+drop policy if exists orders_read on public.orders;
 create policy orders_read on public.orders for select to authenticated using (
   user_id = auth.uid() or public.is_backoffice()
   or (branch_id in (select public.staff_branch_ids()) and payment_state in ('NOT_REQUIRED','CONFIRMED'))
@@ -441,8 +449,10 @@ values ('receipts', 'receipts', false, 5242880, array['image/jpeg','image/png','
 on conflict (id) do update set public = false, file_size_limit = 5242880,
   allowed_mime_types = array['image/jpeg','image/png','image/webp','image/heic','application/pdf'];
 
+drop policy if exists receipts_insert_own on storage.objects;
 create policy receipts_insert_own on storage.objects for insert to authenticated
   with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists receipts_read on storage.objects;
 create policy receipts_read on storage.objects for select to authenticated
   using (bucket_id = 'receipts' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_backoffice()));
 
